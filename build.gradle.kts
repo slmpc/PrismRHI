@@ -1,7 +1,18 @@
+import org.gradle.api.publish.PublishingExtension
+import org.gradle.api.publish.maven.MavenPublication
+
 group = "com.github.slmpc.prismrhi"
 version = "1.0-SNAPSHOT"
 
 val lwjglVersion = "3.4.1"
+val publishableProjects = setOf(
+    "prism-rhi-core",
+    "prism-rhi-backend-opengl41",
+    "prism-rhi-backend-opengl-dsa",
+    "prism-rhi-backend-vulkan",
+    "prism-rhi-shaderc",
+)
+
 val isMacOs = System.getProperty("os.name").lowercase().contains("mac")
 val vulkanSdkPath = providers.environmentVariable("VULKAN_SDK")
     .orElse(providers.gradleProperty("vulkan_sdk"))
@@ -32,8 +43,49 @@ allprojects {
 subprojects {
     apply(plugin = "java-library")
 
+    if (name in publishableProjects) {
+        apply(plugin = "maven-publish")
+    }
+
     extensions.configure<JavaPluginExtension> {
         withSourcesJar()
+    }
+
+    if (name in publishableProjects) {
+        extensions.configure<PublishingExtension> {
+            publications {
+                create<MavenPublication>("mavenJava") {
+                    from(components["java"])
+
+                    pom {
+                        name.set(project.name)
+                        description.set("PrismRHI module: ${project.name}")
+                        url.set("https://github.com/slmpc/PrismRHI")
+
+                        scm {
+                            url.set("https://github.com/slmpc/PrismRHI")
+                            connection.set("scm:git:https://github.com/slmpc/PrismRHI.git")
+                            developerConnection.set("scm:git:https://github.com/slmpc/PrismRHI.git")
+                        }
+                    }
+                }
+            }
+
+            repositories {
+                maven {
+                    name = "GitHubPackages"
+                    url = uri("https://maven.pkg.github.com/slmpc/PrismRHI")
+                    credentials {
+                        username = providers.gradleProperty("gpr.user")
+                            .orElse(providers.environmentVariable("GITHUB_ACTOR"))
+                            .orNull
+                        password = providers.gradleProperty("gpr.key")
+                            .orElse(providers.environmentVariable("GITHUB_TOKEN"))
+                            .orNull
+                    }
+                }
+            }
+        }
     }
 
     tasks.withType<JavaCompile>().configureEach {
