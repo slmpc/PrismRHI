@@ -41,23 +41,18 @@ var pipeline = device.createGraphicsPipeline(
 );
 ```
 
-`rendering(...)` 只声明 pipeline 兼容的 attachment format。实际渲染目标由 command buffer 的 `beginRendering` 指定。
+`rendering(...)` 只声明 pipeline 兼容的 attachment format。实际渲染目标由 `RhiRenderingInfo` 指定，通常通过 Frame Graph pass 的 `.rendering(...)` 声明；也可以直接调用 command buffer 的 `beginRendering(...)`。
 
-## Begin Rendering
+## 声明 Rendering Info
 
 ```java
 import com.github.slmpc.prismrhi.rendering.RhiRect2D;
 import com.github.slmpc.prismrhi.rendering.RhiRenderingAttachment;
 import com.github.slmpc.prismrhi.rendering.RhiRenderingInfo;
-import com.github.slmpc.prismrhi.rendering.RhiViewport;
 
 var renderingInfo = RhiRenderingInfo.builder(RhiRect2D.of(width, height))
         .color(RhiRenderingAttachment.clearColor(colorView, 0.02f, 0.02f, 0.025f, 1.0f))
         .build();
-
-cmd.beginRendering(renderingInfo);
-cmd.setViewport(RhiViewport.of(width, height));
-cmd.setScissor(RhiRect2D.of(width, height));
 ```
 
 深度附件示例：
@@ -69,21 +64,31 @@ var renderingInfo = RhiRenderingInfo.builder(RhiRect2D.of(width, height))
         .build();
 ```
 
-## 录制一次 Draw
+## 通过 Frame Graph 录制一次 Draw
 
 ```java
+var graph = RhiFrameGraph.create()
+        .resource(colorImage, RhiResourceState.UNDEFINED)
+        .resource(depthImage, RhiResourceState.UNDEFINED);
+
+graph.addPass("scene")
+        .writeImage(colorImage, RhiResourceState.COLOR_ATTACHMENT)
+        .writeImage(depthImage, RhiResourceState.DEPTH_STENCIL_ATTACHMENT)
+        .rendering(renderingInfo)
+        .record((cmd, pass) -> {
+            cmd.bindGraphicsPipeline(pipeline);
+            cmd.bindDescriptorSet(pipeline, 0, sceneSet);
+            cmd.bindVertexBuffer(0, vertexBuffer, 0);
+            cmd.bindIndexBuffer(indexBuffer, 0, RhiIndexType.UINT32);
+            cmd.drawIndexed(indexCount);
+        });
+
 cmd.begin();
-cmd.beginRendering(renderingInfo);
-cmd.setViewport(RhiViewport.of(width, height));
-cmd.setScissor(RhiRect2D.of(width, height));
-cmd.bindGraphicsPipeline(pipeline);
-cmd.bindDescriptorSet(pipeline, 0, sceneSet);
-cmd.bindVertexBuffer(0, vertexBuffer, 0);
-cmd.bindIndexBuffer(indexBuffer, 0, RhiIndexType.UINT32);
-cmd.drawIndexed(indexCount);
-cmd.endRendering();
+graph.execute(cmd);
 cmd.end();
 ```
+
+Frame Graph 会根据 `.rendering(renderingInfo)` 自动调用 `beginRendering`，并用 `renderingInfo.renderArea()` 设置默认 viewport/scissor，最后自动 `endRendering`。如果不使用 Frame Graph，也可以手动调用这些 command buffer 方法。
 
 ## Vulkan 映射
 
@@ -91,7 +96,7 @@ Vulkan 后端：
 
 - pipeline 创建时使用 `VkPipelineRenderingCreateInfo`。
 - `renderPass` 传 `VK_NULL_HANDLE`。
-- `beginRendering` 映射为 `vkCmdBeginRendering`。
+- Frame Graph 自动包裹的 `beginRendering` 映射为 `vkCmdBeginRendering`。
 - attachment layout 由 `RhiRenderingAttachment.layout()` 和 frame graph/barrier 状态共同决定。
 
 ## OpenGL 映射
@@ -105,6 +110,5 @@ OpenGL 后端：
 ## 注意事项
 
 - Pipeline 声明的 attachment format 必须与实际 rendering attachment 的 image format 兼容。
-- Vulkan 风格的 viewport/scissor 是显式命令；OpenGL 后端也通过 command buffer 接收这些状态。
+- Vulkan 风格的 viewport/scissor 是显式状态；Frame Graph 会为渲染 pass 设置默认 viewport/scissor，特殊视口仍可在 pass callback 中覆盖。
 - 当前文档只覆盖 graphics pipeline；compute pipeline 可在后续版本中按同样模块化方式加入。
-

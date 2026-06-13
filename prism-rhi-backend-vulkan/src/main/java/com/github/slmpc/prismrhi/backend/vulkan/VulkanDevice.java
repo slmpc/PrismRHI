@@ -75,6 +75,12 @@ import static org.lwjgl.util.vma.Vma.vmaCreateImage;
 import static org.lwjgl.util.vma.Vma.vmaDestroyAllocator;
 import static org.lwjgl.util.vma.Vma.vmaDestroyBuffer;
 import static org.lwjgl.util.vma.Vma.vmaDestroyImage;
+import static org.lwjgl.util.vma.Vma.vmaFlushAllocation;
+import static org.lwjgl.util.vma.Vma.vmaInvalidateAllocation;
+import static org.lwjgl.util.vma.Vma.vmaMapMemory;
+import static org.lwjgl.util.vma.Vma.vmaUnmapMemory;
+import static org.lwjgl.util.vma.Vma.VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+import static org.lwjgl.util.vma.Vma.VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 import static org.lwjgl.vulkan.VK10.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 import static org.lwjgl.vulkan.VK10.VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 import static org.lwjgl.vulkan.VK10.VK_IMAGE_LAYOUT_UNDEFINED;
@@ -322,6 +328,12 @@ final class VulkanDevice implements RhiDevice {
 
             VmaAllocationCreateInfo allocationCreateInfo = VmaAllocationCreateInfo.calloc(stack)
                     .usage(VulkanSupport.memoryUsage(createInfo.memoryUsage()));
+            switch (createInfo.memoryUsage()) {
+                case CPU_TO_GPU -> allocationCreateInfo.flags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
+                case GPU_TO_CPU -> allocationCreateInfo.flags(VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT);
+                case GPU_ONLY -> {
+                }
+            }
 
             LongBuffer bufferPointer = stack.longs(0L);
             var allocationPointer = stack.mallocPointer(1);
@@ -329,7 +341,13 @@ final class VulkanDevice implements RhiDevice {
                     vmaCreateBuffer(allocator, bufferCreateInfo, allocationCreateInfo, bufferPointer, allocationPointer, null),
                     "vmaCreateBuffer"
             );
-            return new VulkanBuffer(allocator, bufferPointer.get(0), allocationPointer.get(0), createInfo.size());
+            return new VulkanBuffer(
+                    allocator,
+                    bufferPointer.get(0),
+                    allocationPointer.get(0),
+                    createInfo.size(),
+                    createInfo.memoryUsage()
+            );
         }
     }
 
@@ -541,10 +559,38 @@ final class VulkanDevice implements RhiDevice {
         }
     }
 
-    record VulkanBuffer(long allocator, long handle, long allocation, long size) implements RhiBuffer {
+    static final class VulkanBuffer implements RhiBuffer {
+        private final long allocator;
+        private final long handle;
+        private final long allocation;
+        private final long size;
+        private final com.github.slmpc.prismrhi.resource.RhiMemoryUsage memoryUsage;
+        private long mappedAddress;
+        private long mappedOffset;
+        private long mappedSize;
+
+        VulkanBuffer(
+                long allocator,
+                long handle,
+                long allocation,
+                long size,
+                com.github.slmpc.prismrhi.resource.RhiMemoryUsage memoryUsage
+        ) {
+            this.allocator = allocator;
+            this.handle = handle;
+            this.allocation = allocation;
+            this.size = size;
+            this.memoryUsage = memoryUsage;
+        }
+
         @Override
         public BackendApi api() {
             return BackendApi.VULKAN;
+        }
+
+        @Override
+        public long size() {
+            return size;
         }
 
         @Override
@@ -553,7 +599,52 @@ final class VulkanDevice implements RhiDevice {
         }
 
         @Override
+        public ByteBuffer map(long offset, long size) {
+            checkRange(offset, size);
+            if (mappedAddress != 0L) {
+                throw new RhiException("Vulkan buffer is already mapped");
+            }
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                var mappedPointer = stack.mallocPointer(1);
+                VulkanSupport.check(vmaMapMemory(allocator, allocation, mappedPointer), "vmaMapMemory");
+                mappedAddress = mappedPointer.get(0);
+                mappedOffset = offset;
+                mappedSize = size;
+                if (memoryUsage == com.github.slmpc.prismrhi.resource.RhiMemoryUsage.GPU_TO_CPU) {
+                    vmaInvalidateAllocation(allocator, allocation, mappedOffset, mappedSize);
+                }
+                return org.lwjgl.system.MemoryUtil.memByteBuffer(mappedAddress + offset, Math.toIntExact(size));
+            }
+        }
+
+        @Override
+        public void unmap() {
+            if (mappedAddress == 0L) {
+                throw new RhiException("Vulkan buffer is not mapped");
+            }
+            if (memoryUsage != com.github.slmpc.prismrhi.resource.RhiMemoryUsage.GPU_TO_CPU) {
+                vmaFlushAllocation(allocator, allocation, mappedOffset, mappedSize);
+            }
+            vmaUnmapMemory(allocator, allocation);
+            mappedAddress = 0L;
+            mappedOffset = 0L;
+            mappedSize = 0L;
+        }
+
+        private void checkRange(long offset, long size) {
+            if (offset < 0 || size < 0 || offset > this.size || size > this.size - offset) {
+                throw new IllegalArgumentException("buffer map range is out of bounds");
+            }
+            if (size > Integer.MAX_VALUE) {
+                throw new IllegalArgumentException("mapped range is too large for a ByteBuffer");
+            }
+        }
+
+        @Override
         public void close() {
+            if (mappedAddress != 0L) {
+                unmap();
+            }
             vmaDestroyBuffer(allocator, handle, allocation);
         }
     }

@@ -9,11 +9,11 @@ PrismRHI is a LWJGL-based Java rendering hardware interface with a Vulkan-style 
 - `prism-rhi-backend-opengl-dsa`: modern OpenGL backend requiring OpenGL 4.5 DSA support.
 - `prism-rhi-backend-vulkan`: Vulkan backend using LWJGL Vulkan and LWJGL VMA.
 - `prism-rhi-shaderc`: optional LWJGL shaderc integration for compiling GLSL to SPIR-V.
-- `prism-rhi-demo-triangle`: runnable Vulkan triangle demo using an RHI-managed GLFW window and swapchain.
+- `prism-rhi-demo-triangle`: runnable Vulkan 3D cube demo using an RHI-managed GLFW window and swapchain. The module keeps its original triangle name for compatibility.
 
 Applications should depend on `prism-rhi-core` plus only the backend jars they want to ship. Backends are discovered with Java `ServiceLoader`, so omitting a backend module also omits its LWJGL backend dependency from the package.
 
-## Vulkan Triangle Demo
+## Vulkan 3D Demo
 
 Run the windowed Vulkan demo with:
 
@@ -21,7 +21,7 @@ Run the windowed Vulkan demo with:
 ./gradlew :prism-rhi-demo-triangle:runTriangleDemo
 ```
 
-The demo uses `RhiContextCreateInfo.autoGlfwWindow(...)` so the Vulkan backend creates the GLFW window, surface, device, swapchain, semaphores, and dynamic-rendering frame. Applications can also pass an existing GLFW window or native Vulkan surface through `RhiContextCreateInfo.glfwWindow(...)` / `externalSurface(...)`.
+The demo renders an indexed 3D cube with a JOML camera, uniform buffer, vertex buffer, index buffer, descriptor set, depth attachment, and a frame graph rendering pass. It uses `RhiContextCreateInfo.autoGlfwWindow(...)` so the Vulkan backend creates the GLFW window, surface, device, swapchain, semaphores, and dynamic-rendering frame. Applications can also pass an existing GLFW window or native Vulkan surface through `RhiContextCreateInfo.glfwWindow(...)` / `externalSurface(...)`.
 
 On macOS the Gradle run task automatically adds `-XstartOnFirstThread`, which GLFW requires for window creation.
 
@@ -103,13 +103,16 @@ import com.github.slmpc.prismrhi.format.RhiFormat;
 import com.github.slmpc.prismrhi.pipeline.RhiDynamicRenderingState;
 import com.github.slmpc.prismrhi.pipeline.RhiGraphicsPipelineCreateInfo;
 import com.github.slmpc.prismrhi.pipeline.RhiVertexInputRate;
+import com.github.slmpc.prismrhi.rendering.RhiAttachmentLoadOp;
 import com.github.slmpc.prismrhi.rendering.RhiRect2D;
 import com.github.slmpc.prismrhi.rendering.RhiRenderingAttachment;
 import com.github.slmpc.prismrhi.rendering.RhiRenderingInfo;
 import com.github.slmpc.prismrhi.rendering.RhiViewport;
 import com.github.slmpc.prismrhi.resource.RhiImageViewCreateInfo;
+import com.github.slmpc.prismrhi.resource.RhiIndexType;
 
 var colorView = device.createImageView(RhiImageViewCreateInfo.of(colorImage));
+var depthView = device.createImageView(RhiImageViewCreateInfo.of(depthImage));
 
 var pipeline = device.createGraphicsPipeline(
         RhiGraphicsPipelineCreateInfo.builder()
@@ -126,10 +129,13 @@ var pipeline = device.createGraphicsPipeline(
                 .build()
 );
 
-cmd.begin();
-cmd.beginRendering(RhiRenderingInfo.builder(RhiRect2D.of(width, height))
+var renderingInfo = RhiRenderingInfo.builder(RhiRect2D.of(width, height))
         .color(RhiRenderingAttachment.clearColor(colorView, 0.02f, 0.02f, 0.025f, 1.0f))
-        .build());
+        .depth(RhiRenderingAttachment.depth(depthView, RhiAttachmentLoadOp.CLEAR, 1.0f))
+        .build();
+
+cmd.begin();
+cmd.beginRendering(renderingInfo);
 cmd.setViewport(RhiViewport.of(width, height));
 cmd.setScissor(RhiRect2D.of(width, height));
 cmd.bindGraphicsPipeline(pipeline);
@@ -143,7 +149,7 @@ cmd.end();
 
 ## Frame Graph
 
-PrismRHI includes a small frame graph that tracks declared resource states and inserts pass-boundary barriers automatically. Pass callbacks still record normal RHI commands, so the graph stays close to the Vulkan mental model without hiding command buffer control.
+PrismRHI includes a small frame graph that tracks declared resource states and inserts pass-boundary barriers automatically. Rendering passes can also declare their `RhiRenderingInfo`; the graph then wraps the callback with `beginRendering`, a default viewport/scissor from the render area, and `endRendering`. Pass callbacks stay focused on draw commands.
 
 ```java
 import com.github.slmpc.prismrhi.barrier.RhiResourceState;
@@ -151,28 +157,27 @@ import com.github.slmpc.prismrhi.framegraph.RhiFrameGraph;
 
 var graph = RhiFrameGraph.create()
         .resource(gbufferColor, RhiResourceState.UNDEFINED)
-        .resource(depthImage, RhiResourceState.UNDEFINED);
+        .resource(depthImage, RhiResourceState.UNDEFINED)
+        .resource(backbuffer, RhiResourceState.UNDEFINED);
 
 graph.addPass("gbuffer")
         .writeImage(gbufferColor, RhiResourceState.COLOR_ATTACHMENT)
         .writeImage(depthImage, RhiResourceState.DEPTH_STENCIL_ATTACHMENT)
+        .rendering(gbufferRendering)
         .record((cmd, pass) -> {
-            cmd.beginRendering(gbufferRendering);
             cmd.bindGraphicsPipeline(gbufferPipeline);
             cmd.drawIndexed(gbufferIndexCount);
-            cmd.endRendering();
         });
 
 graph.addPass("lighting")
         .readImage(gbufferColor, RhiResourceState.SAMPLED_IMAGE)
         .readImage(depthImage, RhiResourceState.SAMPLED_IMAGE)
         .writeImage(backbuffer, RhiResourceState.COLOR_ATTACHMENT)
+        .rendering(lightingRendering)
         .record((cmd, pass) -> {
-            cmd.beginRendering(lightingRendering);
             cmd.bindGraphicsPipeline(lightingPipeline);
             cmd.bindDescriptorSet(lightingPipeline, 0, lightingSet);
             cmd.draw(3);
-            cmd.endRendering();
         });
 
 cmd.begin();

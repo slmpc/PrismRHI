@@ -17,8 +17,7 @@ Buffer 使用 `RhiBufferCreateInfo` 创建：
 var buffer = device.createBuffer(
         RhiBufferCreateInfo.builder(1024 * 1024)
                 .usage(RhiBufferUsage.VERTEX_BUFFER)
-                .usage(RhiBufferUsage.TRANSFER_DST)
-                .memoryUsage(RhiMemoryUsage.GPU_ONLY)
+                .memoryUsage(RhiMemoryUsage.CPU_TO_GPU)
                 .build()
 );
 ```
@@ -40,6 +39,27 @@ var buffer = device.createBuffer(
 - `GPU_TO_CPU`：适合回读。
 
 Vulkan 后端会将其映射到 VMA 的自动内存使用策略。OpenGL 后端会映射到对应 buffer storage/data 调用。
+
+### Buffer 上传与映射
+
+`RhiBuffer` 支持显式映射，也保留便捷写入：
+
+```java
+buffer.write(vertexData);
+
+ByteBuffer mapped = uniformBuffer.map(0, uniformBuffer.size());
+try {
+    mapped.put(matrixData);
+} finally {
+    uniformBuffer.unmap();
+}
+```
+
+- `write(ByteBuffer)` / `write(offset, ByteBuffer)`：一次性上传数据，适合初始化 vertex/index/uniform buffer。
+- `map()` / `map(offset, size)`：返回映射后的 `ByteBuffer` 视图；读写方向取决于 `RhiMemoryUsage` 和后端实现。
+- `unmap()`：结束映射；Vulkan 后端会按内存用途执行 flush/invalidate，OpenGL 后端调用对应 unmap。
+
+要从 CPU 写入资源，创建 buffer 时使用 `RhiMemoryUsage.CPU_TO_GPU`。`GPU_ONLY` 更适合已经通过其他路径上传完成、长期驻留的资源。
 
 ## Image
 

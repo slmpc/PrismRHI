@@ -5,6 +5,8 @@ import com.github.slmpc.prismrhi.barrier.RhiImageBarrier;
 import com.github.slmpc.prismrhi.barrier.RhiPipelineBarrier;
 import com.github.slmpc.prismrhi.barrier.RhiResourceState;
 import com.github.slmpc.prismrhi.command.RhiCommandBuffer;
+import com.github.slmpc.prismrhi.rendering.RhiRenderingInfo;
+import com.github.slmpc.prismrhi.rendering.RhiViewport;
 import com.github.slmpc.prismrhi.resource.RhiBuffer;
 import com.github.slmpc.prismrhi.resource.RhiImage;
 import com.github.slmpc.prismrhi.resource.RhiResource;
@@ -57,7 +59,7 @@ public final class RhiFrameGraph {
             if (!barrier.isEmpty()) {
                 commandBuffer.pipelineBarrier(barrier);
             }
-            pass.recordInto(commandBuffer);
+            recordPass(commandBuffer, pass);
         }
     }
 
@@ -68,6 +70,28 @@ public final class RhiFrameGraph {
     private void register(RhiResource resource, RhiResourceState state) {
         initialStates.put(resource, state == null ? RhiResourceState.UNDEFINED : state);
         currentStates.put(resource, state == null ? RhiResourceState.UNDEFINED : state);
+    }
+
+    private void recordPass(RhiCommandBuffer commandBuffer, RhiFrameGraphPass pass) {
+        RhiRenderingInfo renderingInfo = pass.renderingInfo();
+        if (renderingInfo == null) {
+            pass.recordInto(commandBuffer);
+            return;
+        }
+
+        commandBuffer.beginRendering(renderingInfo);
+        commandBuffer.setViewport(RhiViewport.of(
+                renderingInfo.renderArea().offset().x(),
+                renderingInfo.renderArea().offset().y(),
+                renderingInfo.renderArea().extent().width(),
+                renderingInfo.renderArea().extent().height()
+        ));
+        commandBuffer.setScissor(renderingInfo.renderArea());
+        try {
+            pass.recordInto(commandBuffer);
+        } finally {
+            commandBuffer.endRendering();
+        }
     }
 
     private RhiPipelineBarrier barrierFor(RhiFrameGraphPass pass) {

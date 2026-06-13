@@ -23,8 +23,9 @@ import com.github.slmpc.prismrhi.pipeline.RhiVertexAttribute;
 import com.github.slmpc.prismrhi.pipeline.RhiVertexInputBinding;
 import com.github.slmpc.prismrhi.pipeline.RhiVertexInputRate;
 import com.github.slmpc.prismrhi.rendering.RhiRect2D;
-import com.github.slmpc.prismrhi.rendering.RhiRenderingAttachment;
 import com.github.slmpc.prismrhi.rendering.RhiRenderingInfo;
+import com.github.slmpc.prismrhi.rendering.RhiRenderingAttachment;
+import com.github.slmpc.prismrhi.rendering.RhiViewport;
 import com.github.slmpc.prismrhi.resource.RhiBufferCreateInfo;
 import com.github.slmpc.prismrhi.resource.RhiImageAspect;
 import com.github.slmpc.prismrhi.resource.RhiImage;
@@ -105,6 +106,33 @@ class RhiCreateInfoTest {
     }
 
     @Test
+    void frameGraphWrapsRenderingPasses() {
+        RhiImage image = new TestImage();
+        RhiImageView view = new TestImageView(image);
+        var renderingInfo = RhiRenderingInfo.builder(RhiRect2D.of(640, 360))
+                .color(RhiRenderingAttachment.clearColor(view, 0.0f, 0.0f, 0.0f, 1.0f))
+                .build();
+        var graph = RhiFrameGraph.create()
+                .resource(image, RhiResourceState.UNDEFINED);
+        graph.addPass("scene")
+                .writeImage(image, RhiResourceState.COLOR_ATTACHMENT)
+                .rendering(renderingInfo)
+                .record((cmd, pass) -> cmd.draw(3));
+
+        var commandBuffer = new CapturingCommandBuffer();
+        graph.execute(commandBuffer);
+
+        assertEquals(List.of(
+                "barrier",
+                "beginRendering",
+                "setViewport",
+                "setScissor",
+                "draw",
+                "endRendering"
+        ), commandBuffer.calls);
+    }
+
+    @Test
     void multiDrawRequiresSharedInstanceState() {
         assertThrows(IllegalArgumentException.class, () -> new RhiMultiDrawCommand(List.of(
                 new RhiDrawCommand(3, 1, 0, 0),
@@ -171,6 +199,7 @@ class RhiCreateInfoTest {
     private static final class CapturingCommandBuffer implements RhiCommandBuffer {
         private int barrierCount;
         private final List<RhiPipelineBarrier> barriers = new ArrayList<>();
+        private final List<String> calls = new ArrayList<>();
 
         @Override
         public BackendApi api() {
@@ -199,10 +228,32 @@ class RhiCreateInfoTest {
         public void pipelineBarrier(RhiPipelineBarrier barrier) {
             barrierCount++;
             barriers.add(barrier);
+            calls.add("barrier");
+        }
+
+        @Override
+        public void beginRendering(RhiRenderingInfo renderingInfo) {
+            calls.add("beginRendering");
+        }
+
+        @Override
+        public void endRendering() {
+            calls.add("endRendering");
+        }
+
+        @Override
+        public void setViewport(RhiViewport viewport) {
+            calls.add("setViewport");
+        }
+
+        @Override
+        public void setScissor(RhiRect2D scissor) {
+            calls.add("setScissor");
         }
 
         @Override
         public void draw(RhiDrawCommand command) {
+            calls.add("draw");
         }
 
         @Override

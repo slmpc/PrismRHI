@@ -18,6 +18,7 @@ import com.github.slmpc.prismrhi.resource.RhiImageCreateInfo;
 import com.github.slmpc.prismrhi.resource.RhiImageAspect;
 import com.github.slmpc.prismrhi.resource.RhiImageView;
 import com.github.slmpc.prismrhi.resource.RhiImageViewCreateInfo;
+import com.github.slmpc.prismrhi.resource.RhiMemoryUsage;
 import com.github.slmpc.prismrhi.queue.RhiQueue;
 import com.github.slmpc.prismrhi.queue.RhiQueueType;
 import com.github.slmpc.prismrhi.resource.RhiSampler;
@@ -25,6 +26,7 @@ import com.github.slmpc.prismrhi.resource.RhiSamplerCreateInfo;
 import com.github.slmpc.prismrhi.shader.RhiShaderModule;
 import com.github.slmpc.prismrhi.shader.RhiShaderModuleCreateInfo;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.EnumMap;
 import java.util.Map;
@@ -43,12 +45,17 @@ import static org.lwjgl.opengl.GL11.glTexImage2D;
 import static org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL15.glBindBuffer;
 import static org.lwjgl.opengl.GL15.glBufferData;
+import static org.lwjgl.opengl.GL15.glBufferSubData;
 import static org.lwjgl.opengl.GL15.glDeleteBuffers;
 import static org.lwjgl.opengl.GL15.glGenBuffers;
+import static org.lwjgl.opengl.GL15.glUnmapBuffer;
 import static org.lwjgl.opengl.GL20.glCompileShader;
 import static org.lwjgl.opengl.GL20.glCreateShader;
 import static org.lwjgl.opengl.GL20.glDeleteShader;
 import static org.lwjgl.opengl.GL20.glShaderSource;
+import static org.lwjgl.opengl.GL30.GL_MAP_READ_BIT;
+import static org.lwjgl.opengl.GL30.GL_MAP_WRITE_BIT;
+import static org.lwjgl.opengl.GL30.glMapBufferRange;
 import static org.lwjgl.opengl.GL33.glDeleteSamplers;
 import static org.lwjgl.opengl.GL33.glGenSamplers;
 import static org.lwjgl.opengl.GL33.glSamplerParameteri;
@@ -84,7 +91,7 @@ final class Gl41Device implements RhiDevice {
         glBindBuffer(GL_ARRAY_BUFFER, handle);
         glBufferData(GL_ARRAY_BUFFER, createInfo.size(), Gl41Support.bufferUsage(createInfo.memoryUsage()));
         glBindBuffer(GL_ARRAY_BUFFER, 0);
-        return new Gl41Buffer(handle, createInfo.size());
+        return new Gl41Buffer(handle, createInfo.size(), createInfo.memoryUsage());
     }
 
     @Override
@@ -183,10 +190,26 @@ final class Gl41Device implements RhiDevice {
         }
     }
 
-    private record Gl41Buffer(int handle, long size) implements RhiBuffer {
+    private static final class Gl41Buffer implements RhiBuffer {
+        private final int handle;
+        private final long size;
+        private final RhiMemoryUsage memoryUsage;
+        private boolean mapped;
+
+        private Gl41Buffer(int handle, long size, RhiMemoryUsage memoryUsage) {
+            this.handle = handle;
+            this.size = size;
+            this.memoryUsage = memoryUsage;
+        }
+
         @Override
         public BackendApi api() {
             return BackendApi.OPENGL_41;
+        }
+
+        @Override
+        public long size() {
+            return size;
         }
 
         @Override
@@ -195,8 +218,64 @@ final class Gl41Device implements RhiDevice {
         }
 
         @Override
+        public ByteBuffer map(long offset, long size) {
+            checkRange(offset, size);
+            if (mapped) {
+                throw new RhiException("OpenGL 4.1 buffer is already mapped");
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, handle);
+            ByteBuffer mappedBuffer = glMapBufferRange(GL_ARRAY_BUFFER, offset, size, mapAccess(memoryUsage));
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            if (mappedBuffer == null) {
+                throw new RhiException("glMapBufferRange returned null");
+            }
+            mapped = true;
+            return mappedBuffer;
+        }
+
+        @Override
+        public void unmap() {
+            if (!mapped) {
+                throw new RhiException("OpenGL 4.1 buffer is not mapped");
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, handle);
+            boolean success = glUnmapBuffer(GL_ARRAY_BUFFER);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            mapped = false;
+            if (!success) {
+                throw new RhiException("glUnmapBuffer reported data corruption");
+            }
+        }
+
+        @Override
+        public void write(long offset, ByteBuffer data) {
+            if (data == null) {
+                throw new IllegalArgumentException("data must not be null");
+            }
+            if (offset < 0 || offset + data.remaining() > size) {
+                throw new IllegalArgumentException("buffer write range is out of bounds");
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, handle);
+            glBufferSubData(GL_ARRAY_BUFFER, offset, data.slice());
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+        }
+
+        @Override
         public void close() {
             glDeleteBuffers(handle);
+        }
+
+        private void checkRange(long offset, long size) {
+            if (offset < 0 || size < 0 || offset > this.size || size > this.size - offset) {
+                throw new IllegalArgumentException("buffer map range is out of bounds");
+            }
+        }
+
+        private static int mapAccess(RhiMemoryUsage memoryUsage) {
+            return switch (memoryUsage) {
+                case GPU_TO_CPU -> GL_MAP_READ_BIT;
+                case GPU_ONLY, CPU_TO_GPU -> GL_MAP_WRITE_BIT;
+            };
         }
     }
 

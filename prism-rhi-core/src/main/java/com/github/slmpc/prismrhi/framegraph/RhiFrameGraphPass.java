@@ -1,6 +1,7 @@
 package com.github.slmpc.prismrhi.framegraph;
 
 import com.github.slmpc.prismrhi.barrier.RhiResourceState;
+import com.github.slmpc.prismrhi.rendering.RhiRenderingInfo;
 import com.github.slmpc.prismrhi.resource.RhiBuffer;
 import com.github.slmpc.prismrhi.resource.RhiImage;
 import com.github.slmpc.prismrhi.resource.RhiImageAspect;
@@ -14,6 +15,7 @@ public final class RhiFrameGraphPass {
     private final String name;
     private final List<RhiFrameGraphResourceAccess> reads = new ArrayList<>();
     private final List<RhiFrameGraphResourceAccess> writes = new ArrayList<>();
+    private RhiRenderingInfo renderingInfo;
     private RhiFrameGraphPassCallback callback = (commandBuffer, pass) -> {
     };
 
@@ -34,6 +36,10 @@ public final class RhiFrameGraphPass {
 
     public List<RhiFrameGraphResourceAccess> writes() {
         return List.copyOf(writes);
+    }
+
+    public RhiRenderingInfo renderingInfo() {
+        return renderingInfo;
     }
 
     public RhiFrameGraphPass readImage(RhiImage image, RhiResourceState state) {
@@ -105,6 +111,11 @@ public final class RhiFrameGraphPass {
 
     public RhiFrameGraphPass writeBuffer(RhiBuffer buffer, RhiResourceState state, long offset, long size) {
         writes.add(RhiFrameGraphResourceAccess.buffer(buffer, state, offset, size));
+        return this;
+    }
+
+    public RhiFrameGraphPass rendering(RhiRenderingInfo renderingInfo) {
+        this.renderingInfo = Objects.requireNonNull(renderingInfo, "renderingInfo");
         return this;
     }
 

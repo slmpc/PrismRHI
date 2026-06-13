@@ -1,6 +1,6 @@
-# Vulkan 三角形 Demo
+# Vulkan 3D Demo
 
-仓库内提供了一个窗口化三角形示例模块：
+仓库内提供了一个窗口化 Vulkan 示例模块。模块名仍为 `prism-rhi-demo-triangle`，但当前示例已经从最初的 2D 三角形扩展为一个 3D 立方体，用于展示相机、buffer、descriptor、dynamic rendering 和 frame graph 的组合用法。
 
 ```bash
 ./gradlew :prism-rhi-demo-triangle:runTriangleDemo
@@ -50,19 +50,24 @@ RhiContextCreateInfo contextInfo =
 var instance = PrismRHI.createInstance(
         RhiInstanceCreateInfo.builder(BackendApi.VULKAN)
                 .applicationName("PrismRHI Triangle Demo")
-                .enableValidation(true)
+                .enableValidation(enableValidation)
                 .context(contextInfo)
                 .build()
 );
 ```
+
+窗口标题和 application name 仍保留 `Triangle` 字样，这是示例模块早期名称的历史兼容；当前渲染内容是 3D 立方体。
 
 demo 展示的功能：
 
 - Vulkan 后端自动创建 GLFW window 和 Vulkan surface。
 - 通过 `RhiDevice.createSwapchain(...)` 创建 swapchain。
 - 使用 GLSL 编写 vertex/fragment shader，并通过 `prism-rhi-shaderc` 自动编译为 SPIR-V。
-- 使用 Graphics Pipeline + Dynamic Rendering 绘制。
-- 使用内置 Frame Graph 自动插入 `UNDEFINED -> COLOR_ATTACHMENT -> PRESENT` 的 image barrier。
+- 使用 JOML 构建 camera view-projection matrix，并通过 uniform buffer 传入 vertex shader。
+- 创建并写入 vertex buffer、index buffer 和 uniform buffer。
+- 使用 descriptor set 绑定 uniform buffer。
+- 使用 Graphics Pipeline + Dynamic Rendering + depth attachment 绘制 3D。
+- 使用内置 Frame Graph 声明 rendering pass，自动包裹 `beginRendering`、默认 viewport/scissor、`endRendering`，并自动插入 `UNDEFINED -> COLOR_ATTACHMENT -> PRESENT` 与 depth attachment 的 image barrier。
 - 使用 semaphore 串接 acquire、submit 和 present。
 
 也可以传入外部创建好的对象：

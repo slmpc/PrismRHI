@@ -88,11 +88,14 @@ import com.github.slmpc.prismrhi.resource.RhiMemoryUsage;
 var vertexBuffer = device.createBuffer(
         RhiBufferCreateInfo.builder(vertexBufferSize)
                 .usage(RhiBufferUsage.VERTEX_BUFFER)
-                .usage(RhiBufferUsage.TRANSFER_DST)
-                .memoryUsage(RhiMemoryUsage.GPU_ONLY)
+                .memoryUsage(RhiMemoryUsage.CPU_TO_GPU)
                 .build()
 );
+
+vertexBuffer.write(vertexData);
 ```
+
+`write(ByteBuffer)` 是便捷上传路径，内部使用 buffer 的 host mapping。需要持续更新时，也可以使用 `map(offset, size)` / `unmap()` 显式映射。
 
 Vulkan 后端会通过 VMA 创建 buffer/image；OpenGL 后端会映射为 OpenGL buffer/texture 对象。
 
@@ -101,6 +104,8 @@ Vulkan 后端会通过 VMA 创建 buffer/image；OpenGL 后端会映射为 OpenG
 ```java
 import com.github.slmpc.prismrhi.command.RhiCommandBufferLevel;
 import com.github.slmpc.prismrhi.command.RhiCommandPoolCreateInfo;
+import com.github.slmpc.prismrhi.barrier.RhiResourceState;
+import com.github.slmpc.prismrhi.framegraph.RhiFrameGraph;
 import com.github.slmpc.prismrhi.queue.RhiSubmitInfo;
 import com.github.slmpc.prismrhi.queue.RhiQueueType;
 
@@ -110,14 +115,20 @@ var commandPool = device.createCommandPool(
 
 var cmd = commandPool.allocateCommandBuffer(RhiCommandBufferLevel.PRIMARY);
 
+var graph = RhiFrameGraph.create()
+        .resource(colorImage, RhiResourceState.UNDEFINED);
+
+graph.addPass("scene")
+        .writeImage(colorImage, RhiResourceState.COLOR_ATTACHMENT)
+        .rendering(renderingInfo)
+        .record((cmd, pass) -> {
+            cmd.bindGraphicsPipeline(pipeline);
+            cmd.bindVertexBuffer(0, vertexBuffer, 0);
+            cmd.draw(3);
+        });
+
 cmd.begin();
-cmd.beginRendering(renderingInfo);
-cmd.setViewport(viewport);
-cmd.setScissor(scissor);
-cmd.bindGraphicsPipeline(pipeline);
-cmd.bindVertexBuffer(0, vertexBuffer, 0);
-cmd.draw(3);
-cmd.endRendering();
+graph.execute(cmd);
 cmd.end();
 
 graphicsQueue.submit(RhiSubmitInfo.of(cmd));
@@ -142,12 +153,12 @@ device.close();
 instance.close();
 ```
 
-## Vulkan 窗口 Demo
+## Vulkan 3D Demo
 
-仓库内的 Vulkan 三角形示例可以直接运行：
+仓库内的 Vulkan 3D 立方体示例可以直接运行：
 
 ```bash
 ./gradlew :prism-rhi-demo-triangle:runTriangleDemo
 ```
 
-它使用 RHI 自动创建 GLFW window、Vulkan surface 和 swapchain；详见 [Vulkan 三角形 Demo](triangle-demo.md)。
+它使用 RHI 自动创建 GLFW window、Vulkan surface 和 swapchain，并展示 JOML 相机、uniform buffer、vertex/index buffer、depth attachment 和 Frame Graph；详见 [Vulkan 3D Demo](triangle-demo.md)。
