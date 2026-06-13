@@ -12,12 +12,17 @@ public record RhiInstanceCreateInfo(
         String applicationName,
         boolean enableValidation,
         Set<String> enabledExtensions,
+        long nativeInstanceHandle,
+        boolean ownsNativeInstance,
         RhiContextCreateInfo contextCreateInfo
 ) {
     public RhiInstanceCreateInfo {
         backend = Objects.requireNonNull(backend, "backend");
         applicationName = applicationName == null || applicationName.isBlank() ? "PrismRHI Application" : applicationName;
         enabledExtensions = Set.copyOf(enabledExtensions == null ? Set.of() : enabledExtensions);
+        if (nativeInstanceHandle != 0L && backend != BackendApi.VULKAN) {
+            throw new IllegalArgumentException("native instance wrapping is only supported by the Vulkan backend");
+        }
     }
 
     public static Builder builder(BackendApi backend) {
@@ -29,6 +34,8 @@ public record RhiInstanceCreateInfo(
         private String applicationName = "PrismRHI Application";
         private boolean enableValidation;
         private final Set<String> enabledExtensions = new LinkedHashSet<>();
+        private long nativeInstanceHandle;
+        private boolean ownsNativeInstance;
         private RhiContextCreateInfo contextCreateInfo;
 
         private Builder(BackendApi backend) {
@@ -61,6 +68,22 @@ public record RhiInstanceCreateInfo(
             return this;
         }
 
+        public Builder nativeInstanceHandle(long nativeInstanceHandle) {
+            this.nativeInstanceHandle = nativeInstanceHandle;
+            return this;
+        }
+
+        public Builder externalVulkanInstance(long instanceHandle) {
+            this.nativeInstanceHandle = instanceHandle;
+            this.ownsNativeInstance = false;
+            return this;
+        }
+
+        public Builder ownsNativeInstance(boolean ownsNativeInstance) {
+            this.ownsNativeInstance = ownsNativeInstance;
+            return this;
+        }
+
         public Builder context(RhiContextCreateInfo contextCreateInfo) {
             this.contextCreateInfo = contextCreateInfo;
             return this;
@@ -72,6 +95,8 @@ public record RhiInstanceCreateInfo(
                     applicationName,
                     enableValidation,
                     enabledExtensions,
+                    nativeInstanceHandle,
+                    ownsNativeInstance,
                     contextCreateInfo
             );
         }

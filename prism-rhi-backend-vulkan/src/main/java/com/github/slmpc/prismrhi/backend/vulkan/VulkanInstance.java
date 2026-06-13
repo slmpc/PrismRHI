@@ -63,6 +63,7 @@ final class VulkanInstance implements RhiInstance {
     private final VulkanContext context;
     private final long debugMessenger;
     private final VkDebugUtilsMessengerCallbackEXT debugCallback;
+    private final boolean ownsInstance;
     private boolean closed;
 
     private VulkanInstance(
@@ -70,16 +71,21 @@ final class VulkanInstance implements RhiInstance {
             VkInstance instance,
             VulkanContext context,
             long debugMessenger,
-            VkDebugUtilsMessengerCallbackEXT debugCallback
+            VkDebugUtilsMessengerCallbackEXT debugCallback,
+            boolean ownsInstance
     ) {
         this.backendInfo = backendInfo;
         this.instance = instance;
         this.context = context;
         this.debugMessenger = debugMessenger;
         this.debugCallback = debugCallback;
+        this.ownsInstance = ownsInstance;
     }
 
     static VulkanInstance create(BackendInfo backendInfo, RhiInstanceCreateInfo createInfo) {
+        if (createInfo.nativeInstanceHandle() != NULL) {
+            return wrapNative(backendInfo, createInfo);
+        }
         VulkanContext.GlfwPreparation glfwPreparation = VulkanContext.prepareGlfw(createInfo.contextCreateInfo());
         Set<String> availableLayers = availableInstanceLayers();
         validateRequestedLayers(createInfo, availableLayers);
@@ -148,13 +154,71 @@ final class VulkanInstance implements RhiInstance {
             VulkanContext context = createInfo.contextCreateInfo() == null
                     ? null
                     : VulkanContext.create(instance, createInfo.contextCreateInfo(), glfwPreparation.initializedByRhi());
-            return new VulkanInstance(backendInfo, instance, context, debugMessenger, debugCallback);
+            return new VulkanInstance(backendInfo, instance, context, debugMessenger, debugCallback, true);
         } catch (RuntimeException exception) {
             if (debugCallback != null) {
                 debugCallback.free();
             }
             throw exception;
         }
+    }
+
+    private static VulkanInstance wrapNative(BackendInfo backendInfo, RhiInstanceCreateInfo createInfo) {
+        if (createInfo.enableValidation()) {
+            System.err.println(
+                    "[PrismRHI][Vulkan] enableValidation is ignored when wrapping an existing VkInstance."
+            );
+        }
+        VulkanContext.GlfwPreparation glfwPreparation = VulkanContext.prepareGlfw(createInfo.contextCreateInfo());
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkInstanceCreateInfo wrapperCreateInfo = nativeWrapperCreateInfo(createInfo, glfwPreparation, stack);
+            VkInstance instance = new VkInstance(createInfo.nativeInstanceHandle(), wrapperCreateInfo);
+            VulkanContext context = createInfo.contextCreateInfo() == null
+                    ? null
+                    : VulkanContext.create(instance, createInfo.contextCreateInfo(), glfwPreparation.initializedByRhi());
+            return new VulkanInstance(
+                    backendInfo,
+                    instance,
+                    context,
+                    NULL,
+                    null,
+                    createInfo.ownsNativeInstance()
+            );
+        }
+    }
+
+    private static VkInstanceCreateInfo nativeWrapperCreateInfo(
+            RhiInstanceCreateInfo createInfo,
+            VulkanContext.GlfwPreparation glfwPreparation,
+            MemoryStack stack
+    ) {
+        VkApplicationInfo appInfo = VkApplicationInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_APPLICATION_INFO)
+                .pApplicationName(stack.UTF8(createInfo.applicationName()))
+                .applicationVersion(VK_MAKE_VERSION(1, 0, 0))
+                .pEngineName(stack.UTF8("PrismRHI"))
+                .engineVersion(VK_MAKE_VERSION(1, 0, 0))
+                .apiVersion(VK_API_VERSION_1_3);
+
+        PointerBuffer extensions = null;
+        Set<String> enabledExtensions = new LinkedHashSet<>(createInfo.enabledExtensions());
+        if (createInfo.contextCreateInfo() != null) {
+            enabledExtensions.addAll(createInfo.contextCreateInfo().requiredInstanceExtensions());
+        }
+        enabledExtensions.addAll(glfwPreparation.requiredInstanceExtensions());
+
+        if (!enabledExtensions.isEmpty()) {
+            extensions = stack.mallocPointer(enabledExtensions.size());
+            for (String extension : enabledExtensions) {
+                extensions.put(stack.UTF8(extension));
+            }
+            extensions.flip();
+        }
+
+        return VkInstanceCreateInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO)
+                .pApplicationInfo(appInfo)
+                .ppEnabledExtensionNames(extensions);
     }
 
     private static Set<String> enabledInstanceExtensions(
@@ -379,13 +443,15 @@ final class VulkanInstance implements RhiInstance {
             if (context != null) {
                 context.close();
             }
-            if (debugMessenger != NULL) {
+            if (ownsInstance && debugMessenger != NULL) {
                 vkDestroyDebugUtilsMessengerEXT(instance, debugMessenger, null);
             }
             if (debugCallback != null) {
                 debugCallback.free();
             }
-            vkDestroyInstance(instance, null);
+            if (ownsInstance) {
+                vkDestroyInstance(instance, null);
+            }
             closed = true;
         }
     }

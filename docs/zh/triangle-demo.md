@@ -79,7 +79,7 @@ var contextInfo = RhiContextCreateInfo.glfwWindow(windowHandle, width, height).b
 如果窗口系统已经创建了 Vulkan surface，可以使用：
 
 ```java
-var contextInfo = RhiContextCreateInfo.externalSurface(surfaceHandle, width, height).build();
+var contextInfo = RhiContextCreateInfo.externalVulkanSurface(surfaceHandle, width, height).build();
 ```
 
 自动创建的 context 会由 RHI 负责释放窗口和 surface；外部传入的窗口或 surface 默认不由 RHI 销毁。

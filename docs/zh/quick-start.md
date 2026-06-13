@@ -46,6 +46,8 @@ VULKAN_VALIDATION_LAYER=1 \
 ./gradlew :prism-rhi-demo-triangle:runTriangleDemo
 ```
 
+如果应用已经创建了 `VkInstance` / `VkSurfaceKHR`，可以用 `externalVulkanInstance(...)` 和 `RhiContextCreateInfo.externalVulkanSurface(...)` 包装现有对象；详见 [后端选择与加载](backends.md)。
+
 也可以先查看当前进程中可用的后端：
 
 ```java

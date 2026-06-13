@@ -26,7 +26,8 @@ public record RhiContextCreateInfo(
         if (mode == RhiContextMode.GLFW_WINDOW && windowHandle == 0L) {
             throw new IllegalArgumentException("GLFW_WINDOW context requires a window handle");
         }
-        if (mode == RhiContextMode.EXTERNAL_SURFACE && surfaceHandle == 0L) {
+        if ((mode == RhiContextMode.EXTERNAL_SURFACE || mode == RhiContextMode.EXTERNAL_VULKAN_SURFACE)
+                && surfaceHandle == 0L) {
             throw new IllegalArgumentException("EXTERNAL_SURFACE context requires a surface handle");
         }
     }
@@ -51,6 +52,15 @@ public record RhiContextCreateInfo(
         return new Builder(RhiContextMode.EXTERNAL_SURFACE)
                 .surfaceHandle(surfaceHandle)
                 .size(width, height)
+                .ownsWindow(false)
+                .ownsSurface(false);
+    }
+
+    public static Builder externalVulkanSurface(long surfaceHandle, int width, int height) {
+        return new Builder(RhiContextMode.EXTERNAL_VULKAN_SURFACE)
+                .surfaceHandle(surfaceHandle)
+                .size(width, height)
+                .requiredInstanceExtension("VK_KHR_surface")
                 .ownsWindow(false)
                 .ownsSurface(false);
     }

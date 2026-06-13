@@ -1,31 +1,31 @@
 # PrismRHI
 
-PrismRHI is a LWJGL-based Java rendering hardware interface with a Vulkan-style API shape and optional backend modules.
+PrismRHI 是一个基于 LWJGL 的 Java Rendering Hardware Interface，API 风格接近 Vulkan，并通过可选模块提供不同后端。
 
-## Modules
+## 模块
 
-- `prism-rhi-core`: backend-neutral RHI API, create-info records, resource handles, queue and command abstractions.
-- `prism-rhi-backend-opengl41`: OpenGL 4.1-compatible backend using bind-to-edit calls.
-- `prism-rhi-backend-opengl-dsa`: modern OpenGL backend requiring OpenGL 4.5 DSA support.
-- `prism-rhi-backend-vulkan`: Vulkan backend using LWJGL Vulkan and LWJGL VMA.
-- `prism-rhi-shaderc`: optional LWJGL shaderc integration for compiling GLSL to SPIR-V.
-- `prism-rhi-demo-triangle`: runnable Vulkan 3D cube demo using an RHI-managed GLFW window and swapchain. The module keeps its original triangle name for compatibility.
+- `prism-rhi-core`：后端无关的 RHI API、create-info、资源句柄、队列和命令抽象。
+- `prism-rhi-backend-opengl41`：OpenGL 4.1 兼容后端，使用 bind-to-edit 调用。
+- `prism-rhi-backend-opengl-dsa`：现代 OpenGL 后端，需要 OpenGL 4.5 DSA 支持。
+- `prism-rhi-backend-vulkan`：Vulkan 后端，基于 LWJGL Vulkan 和 LWJGL VMA。
+- `prism-rhi-shaderc`：可选的 LWJGL shaderc 集成，用于把 GLSL 编译为 SPIR-V。
+- `prism-rhi-demo-triangle`：可运行的 Vulkan 3D 立方体 demo，使用 RHI 管理的 GLFW window 和 swapchain。模块名保留了最初的 triangle 命名以保持兼容。
 
-Applications should depend on `prism-rhi-core` plus only the backend jars they want to ship. Backends are discovered with Java `ServiceLoader`, so omitting a backend module also omits its LWJGL backend dependency from the package.
+应用通常只需要依赖 `prism-rhi-core` 和实际发布时需要的后端 jar。后端通过 Java `ServiceLoader` 发现，因此不依赖某个后端模块时，也不会把该后端的 LWJGL 依赖带入包体。
 
 ## Vulkan 3D Demo
 
-Run the windowed Vulkan demo with:
+运行窗口化 Vulkan demo：
 
 ```bash
 ./gradlew :prism-rhi-demo-triangle:runTriangleDemo
 ```
 
-The demo renders an indexed 3D cube with a JOML camera, uniform buffer, vertex buffer, index buffer, descriptor set, depth attachment, and a frame graph rendering pass. It uses `RhiContextCreateInfo.autoGlfwWindow(...)` so the Vulkan backend creates the GLFW window, surface, device, swapchain, semaphores, and dynamic-rendering frame. Applications can also pass an existing GLFW window or native Vulkan surface through `RhiContextCreateInfo.glfwWindow(...)` / `externalSurface(...)`.
+该 demo 渲染一个 indexed 3D 立方体，使用 JOML camera、uniform buffer、vertex buffer、index buffer、descriptor set、depth attachment 和 frame graph rendering pass。它通过 `RhiContextCreateInfo.autoGlfwWindow(...)` 让 Vulkan 后端自动创建 GLFW window、surface、device、swapchain、semaphore 和 dynamic-rendering frame。应用也可以通过 `RhiContextCreateInfo.glfwWindow(...)` / `externalVulkanSurface(...)` 传入已有 GLFW window 或 native Vulkan surface。
 
-On macOS the Gradle run task automatically adds `-XstartOnFirstThread`, which GLFW requires for window creation.
+在 macOS 上，Gradle run task 会自动添加 GLFW 创建窗口所需的 `-XstartOnFirstThread`。
 
-## Backend Selection
+## 后端选择
 
 ```java
 import com.github.slmpc.prismrhi.PrismRHI;
@@ -40,7 +40,24 @@ var instance = PrismRHI.createInstance(
 );
 ```
 
-You can inspect available backend providers before creating an instance:
+如果应用已经创建好了 Vulkan instance，可以传入 native `VkInstance` handle，以及该 instance 创建时启用过的 instance extension。除非显式设置 `ownsNativeInstance(true)` 或 `ownsSurface(true)`，RHI 不会销毁外部传入的 Vulkan object。
+
+```java
+import com.github.slmpc.prismrhi.context.RhiContextCreateInfo;
+
+var contextInfo = RhiContextCreateInfo.externalVulkanSurface(vkSurface, width, height)
+        .build();
+
+var instance = PrismRHI.createInstance(
+        RhiInstanceCreateInfo.builder(BackendApi.VULKAN)
+                .externalVulkanInstance(vkInstance)
+                .addExtension("VK_KHR_surface")
+                .context(contextInfo)
+                .build()
+);
+```
+
+创建 instance 前，也可以枚举当前可用的后端 provider：
 
 ```java
 import com.github.slmpc.prismrhi.PrismRHI;
@@ -51,19 +68,19 @@ for (RhiBackendProvider provider : PrismRHI.providers()) {
 }
 ```
 
-## OpenGL Context Ownership
+## OpenGL Context 归属
 
-The OpenGL backends expect the application to create and make current an OpenGL context first, for example with GLFW. The RHI then wraps the current context and exposes a Vulkan-style device, queue, resource, and command-pool surface.
+OpenGL 后端要求应用先创建并 make current 一个 OpenGL context，例如通过 GLFW 创建。RHI 会包装当前 context，并暴露 Vulkan 风格的 device、queue、resource 和 command-pool 接口。
 
-`OPENGL_41` targets compatibility and avoids DSA entry points. `OPENGL_DSA` requires an OpenGL 4.5 context and uses calls such as `glCreateBuffers`, `glNamedBufferData`, `glCreateTextures`, and `glTextureStorage2D`.
+`OPENGL_41` 面向兼容场景，避免使用 DSA 入口点。`OPENGL_DSA` 需要 OpenGL 4.5 context，并使用 `glCreateBuffers`、`glNamedBufferData`、`glCreateTextures`、`glTextureStorage2D` 等调用。
 
-## Vulkan Memory
+## Vulkan 内存
 
-The Vulkan backend creates a VMA allocator per logical device. Buffer and image creation goes through `vmaCreateBuffer` and `vmaCreateImage`, with `RhiMemoryUsage` mapped to VMA automatic memory usage preferences.
+Vulkan 后端会为每个 logical device 创建一个 VMA allocator。Buffer 和 image 创建分别通过 `vmaCreateBuffer` / `vmaCreateImage` 完成，`RhiMemoryUsage` 会映射到 VMA 的自动内存使用策略。
 
-## GLSL and Shaderc
+## GLSL 与 Shaderc
 
-OpenGL backends accept GLSL shader modules directly. The Vulkan backend accepts SPIR-V directly, and can also accept GLSL when the optional `prism-rhi-shaderc` module is on the classpath. Shader compilers are discovered through `ServiceLoader`, so applications only ship shaderc when they choose that module.
+OpenGL 后端直接接受 GLSL shader module。Vulkan 后端直接接受 SPIR-V；如果 classpath 中存在可选的 `prism-rhi-shaderc` 模块，也可以接受 GLSL 并自动编译。Shader compiler 通过 `ServiceLoader` 发现，因此应用只有在选择 shaderc 模块时才会携带相关依赖。
 
 ```java
 import com.github.slmpc.prismrhi.shader.RhiShaderModuleCreateInfo;
@@ -81,7 +98,7 @@ var vertexShader = device.createShaderModule(RhiShaderModuleCreateInfo.glsl(
 ));
 ```
 
-You can also use the compiler explicitly:
+也可以显式调用编译器：
 
 ```java
 var spirvInfo = RhiShaderCompilers.compile(
@@ -94,9 +111,9 @@ var spirvInfo = RhiShaderCompilers.compile(
 );
 ```
 
-## Graphics Pipelines and Dynamic Rendering
+## Graphics Pipeline 与 Dynamic Rendering
 
-Graphics pipelines are declared with attachment formats instead of render passes. The Vulkan backend creates pipelines with `VkPipelineRenderingCreateInfo` and records rendering with `vkCmdBeginRendering`, while the OpenGL backends map the same RHI shape to transient framebuffers.
+Graphics pipeline 使用 attachment format 声明兼容性，而不是绑定传统 render pass。Vulkan 后端使用 `VkPipelineRenderingCreateInfo` 创建 pipeline，并通过 `vkCmdBeginRendering` 录制 rendering；OpenGL 后端会把同样的 RHI 形态映射到临时 framebuffer。
 
 ```java
 import com.github.slmpc.prismrhi.format.RhiFormat;
@@ -149,7 +166,7 @@ cmd.end();
 
 ## Frame Graph
 
-PrismRHI includes a small frame graph that tracks declared resource states and inserts pass-boundary barriers automatically. Rendering passes can also declare their `RhiRenderingInfo`; the graph then wraps the callback with `beginRendering`, a default viewport/scissor from the render area, and `endRendering`. Pass callbacks stay focused on draw commands.
+PrismRHI 内置一个轻量 frame graph，用于跟踪声明的资源状态，并在 pass 边界自动插入 barrier。Rendering pass 还可以声明自己的 `RhiRenderingInfo`；graph 会自动在 callback 外包裹 `beginRendering`、根据 render area 设置默认 viewport/scissor，并在最后调用 `endRendering`。Pass callback 因此可以专注于绘制命令。
 
 ```java
 import com.github.slmpc.prismrhi.barrier.RhiResourceState;
@@ -185,11 +202,11 @@ graph.execute(cmd);
 cmd.end();
 ```
 
-The Vulkan backend maps frame graph transitions to `vkCmdPipelineBarrier` image and buffer barriers, including image layout transitions. OpenGL backends accept the same graph and leave barriers as no-ops because OpenGL synchronizes this class of draw/texture/framebuffer usage implicitly.
+Vulkan 后端会把 frame graph transition 映射为 `vkCmdPipelineBarrier` 的 image/buffer barrier，包括 image layout transition。OpenGL 后端接受同样的 graph；由于 OpenGL 对这类 draw/texture/framebuffer 使用通常由驱动状态机隐式同步，barrier 多数情况下是 no-op。
 
-## Descriptors
+## Descriptor
 
-Descriptors are intentionally compact: create one layout, allocate sets from it, then update with a writer.
+Descriptor API 保持紧凑：先创建 layout，再从 layout 分配 set，最后用 writer 更新。
 
 ```java
 import com.github.slmpc.prismrhi.descriptor.RhiDescriptorSetAllocateInfo;
@@ -208,18 +225,18 @@ var set = device.allocateDescriptorSet(RhiDescriptorSetAllocateInfo.bindless(lay
 set.update(writer -> writer.uniformBuffer(0, cameraBuffer));
 ```
 
-Image descriptors use image views and optional samplers:
+Image descriptor 使用 image view 和可选 sampler：
 
 ```java
 var sampler = device.createSampler(RhiSamplerCreateInfo.linearRepeat());
 set.update(writer -> writer.combinedImageSampler(1, 0, colorView, sampler));
 ```
 
-`bindless` enables descriptor indexing flags for that binding: update-after-bind, update-unused-while-pending, partially-bound, and variable descriptor count. The Vulkan backend enables descriptor indexing features during logical device creation and maps those flags to Vulkan 1.2 descriptor indexing. OpenGL backends keep the same RHI-facing descriptor shape and bind buffers/textures when descriptor sets are bound on a command buffer.
+`bindless` 会为对应 binding 启用 descriptor indexing flags：update-after-bind、update-unused-while-pending、partially-bound 和 variable descriptor count。Vulkan 后端会在 logical device 创建时启用 descriptor indexing features，并映射到 Vulkan 1.2 descriptor indexing。OpenGL 后端保留同样的 RHI descriptor 形态，在 command buffer 绑定 descriptor set 时绑定对应 buffer/texture。
 
-## Draw Commands
+## 绘制命令
 
-`RhiCommandBuffer` exposes Vulkan-style draw commands:
+`RhiCommandBuffer` 暴露 Vulkan 风格的绘制命令：
 
 - `draw` / `drawInstanced`
 - `drawIndexed` / `drawIndexedInstanced`
@@ -228,10 +245,10 @@ set.update(writer -> writer.combinedImageSampler(1, 0, colorView, sampler));
 - `multiDrawIndirect` / `multiDrawIndexedIndirect`
 - `multiDrawIndirectCount` / `multiDrawIndexedIndirectCount`
 
-Indirect commands use `RhiBuffer` plus byte offsets so the same API maps to Vulkan buffers and OpenGL indirect buffers. Packed indirect strides use Vulkan-compatible layouts: 16 bytes for non-indexed indirect draws and 20 bytes for indexed indirect draws.
+Indirect command 使用 `RhiBuffer` 加 byte offset，因此同一套 API 可以映射到 Vulkan buffer 和 OpenGL indirect buffer。Packed indirect stride 使用 Vulkan 兼容布局：non-indexed indirect draw 为 16 bytes，indexed indirect draw 为 20 bytes。
 
-`multiDraw` and `multiDrawIndexed` are true multi-draw commands, not loops over `draw`. OpenGL backends use `glMultiDrawArrays` and `glMultiDrawElements`; Vulkan uses `VK_EXT_multi_draw` and throws `RhiException` if the extension is unavailable. Because true multi-draw APIs share instance parameters across all draws, `RhiMultiDrawCommand` and `RhiMultiDrawIndexedCommand` require a common `instanceCount` and `firstInstance`.
+`multiDraw` 和 `multiDrawIndexed` 是真实 multi-draw 命令，不是在 RHI 层循环调用多个 `draw`。OpenGL 后端使用 `glMultiDrawArrays` 和 `glMultiDrawElements`；Vulkan 使用 `VK_EXT_multi_draw`，如果扩展不可用则抛出 `RhiException`。由于真实 multi-draw API 会在所有 draw 之间共享 instance 参数，`RhiMultiDrawCommand` 和 `RhiMultiDrawIndexedCommand` 要求统一的 `instanceCount` 和 `firstInstance`。
 
-OpenGL backends expose `setPrimitiveTopology` and `setIndexType` on the command buffer because OpenGL draw calls need those values at call time. Vulkan topology is controlled by pipeline state, and index type is supplied through `bindIndexBuffer`.
+OpenGL 后端在 command buffer 上暴露 `setPrimitiveTopology` 和 `setIndexType`，因为 OpenGL draw 调用在执行时需要这些状态。Vulkan 的 topology 由 pipeline state 控制，index type 通过 `bindIndexBuffer` 指定。
 
-`OPENGL_41` supports direct and instanced draw calls, plus single indirect draws. It throws `RhiException` for unsupported Vulkan-style parameters such as `firstInstance`, indexed `vertexOffset`, multi indirect, and indirect count draws. `OPENGL_DSA` supports modern base-instance and multi-indirect calls; indirect count draws require OpenGL 4.6 or `GL_ARB_indirect_parameters`.
+`OPENGL_41` 支持 direct draw、instanced draw 和单个 indirect draw。对于 OpenGL 4.1 不支持的 Vulkan 风格参数，例如 `firstInstance`、indexed `vertexOffset`、multi indirect、indirect count draw，会抛出 `RhiException`。`OPENGL_DSA` 支持现代 base-instance 和 multi-indirect 调用；indirect count draw 需要 OpenGL 4.6 或 `GL_ARB_indirect_parameters`。

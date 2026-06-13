@@ -52,9 +52,25 @@ for (var provider : PrismRHI.providers()) {
 - Frame graph barrier 映射到 `vkCmdPipelineBarrier`。
 - 支持真实 multi-draw 时使用 `VK_EXT_multi_draw` 的 `vkCmdDrawMultiEXT` 和 `vkCmdDrawMultiIndexedEXT`。
 - 可以通过 `RhiContextCreateInfo.autoGlfwWindow(...)` 自动创建 GLFW window 和 Vulkan surface。
-- 也可以通过 `RhiContextCreateInfo.glfwWindow(...)` 或 `externalSurface(...)` 传入外部创建的 context/surface。
+- 也可以通过 `RhiContextCreateInfo.glfwWindow(...)`、`externalSurface(...)` 或 `externalVulkanSurface(...)` 传入外部创建的 window/surface。
+- 可以通过 `RhiInstanceCreateInfo.builder(BackendApi.VULKAN).externalVulkanInstance(...)` 包装已经创建好的 `VkInstance`。
 - `RhiDevice.createSwapchain(...)` 提供最小 swapchain/acquire/present 支持。
 - `enableValidation(true)` 会启用 `VK_LAYER_KHRONOS_validation`，并在可用时创建 `VK_EXT_debug_utils` messenger，把 validation/performance/general 消息输出到 stderr。
+
+包装外部 `VkInstance` 时，需要把该 instance 创建时已经启用的 instance extension 传给 builder；这些 extension 用于构造 LWJGL capabilities，不会重新创建 Vulkan object。外部传入的 instance/surface 默认不由 RHI 销毁。
+
+```java
+var contextInfo = RhiContextCreateInfo.externalVulkanSurface(vkSurface, width, height)
+        .build();
+
+var instance = PrismRHI.createInstance(
+        RhiInstanceCreateInfo.builder(BackendApi.VULKAN)
+                .externalVulkanInstance(vkInstance)
+                .addExtension("VK_KHR_surface")
+                .context(contextInfo)
+                .build()
+);
+```
 
 注意：
 

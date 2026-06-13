@@ -15,6 +15,8 @@ import com.github.slmpc.prismrhi.command.RhiMultiDrawIndexedIndirectCommand;
 import com.github.slmpc.prismrhi.command.RhiMultiDrawIndexedIndirectCountCommand;
 import com.github.slmpc.prismrhi.command.RhiMultiDrawIndirectCommand;
 import com.github.slmpc.prismrhi.command.RhiMultiDrawIndirectCountCommand;
+import com.github.slmpc.prismrhi.context.RhiContextCreateInfo;
+import com.github.slmpc.prismrhi.context.RhiContextMode;
 import com.github.slmpc.prismrhi.format.RhiFormat;
 import com.github.slmpc.prismrhi.framegraph.RhiFrameGraph;
 import com.github.slmpc.prismrhi.instance.RhiInstanceCreateInfo;
@@ -51,6 +53,31 @@ class RhiCreateInfoTest {
         assertEquals(BackendApi.VULKAN, info.backend());
         assertEquals("Sample", info.applicationName());
         assertEquals(1, info.enabledExtensions().size());
+    }
+
+    @Test
+    void instanceCreateInfoCanWrapExternalVulkanInstance() {
+        var contextInfo = RhiContextCreateInfo.externalVulkanSurface(0xCAFE, 1920, 1080)
+                .requiredInstanceExtension("VK_KHR_surface")
+                .build();
+        var info = RhiInstanceCreateInfo.builder(BackendApi.VULKAN)
+                .externalVulkanInstance(0xBEEF)
+                .addExtension("VK_KHR_surface")
+                .context(contextInfo)
+                .build();
+
+        assertEquals(0xBEEF, info.nativeInstanceHandle());
+        assertEquals(false, info.ownsNativeInstance());
+        assertEquals(RhiContextMode.EXTERNAL_VULKAN_SURFACE, info.contextCreateInfo().mode());
+        assertEquals(0xCAFE, info.contextCreateInfo().surfaceHandle());
+        assertEquals(Set.of("VK_KHR_surface"), info.contextCreateInfo().requiredInstanceExtensions());
+    }
+
+    @Test
+    void nativeInstanceWrappingIsVulkanOnly() {
+        assertThrows(IllegalArgumentException.class, () -> RhiInstanceCreateInfo.builder(BackendApi.OPENGL_41)
+                .nativeInstanceHandle(1)
+                .build());
     }
 
     @Test
