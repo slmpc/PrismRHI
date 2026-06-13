@@ -65,6 +65,7 @@ import static org.lwjgl.vulkan.VK10.vkCmdSetScissor;
 import static org.lwjgl.vulkan.VK10.vkCmdSetViewport;
 import static org.lwjgl.vulkan.VK10.vkCmdPipelineBarrier;
 import static org.lwjgl.vulkan.VK10.vkEndCommandBuffer;
+import static org.lwjgl.vulkan.VK10.vkResetCommandBuffer;
 import static org.lwjgl.vulkan.VK12.vkCmdDrawIndexedIndirectCount;
 import static org.lwjgl.vulkan.VK12.vkCmdDrawIndirectCount;
 import static org.lwjgl.vulkan.VK13.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -115,6 +116,11 @@ final class VulkanCommandBuffer implements RhiCommandBuffer {
                     .sType(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
             VulkanSupport.check(vkBeginCommandBuffer(commandBuffer, beginInfo), "vkBeginCommandBuffer");
         }
+    }
+
+    @Override
+    public void reset() {
+        VulkanSupport.check(vkResetCommandBuffer(commandBuffer, 0), "vkResetCommandBuffer");
     }
 
     @Override

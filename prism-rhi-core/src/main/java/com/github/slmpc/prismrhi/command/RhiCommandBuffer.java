@@ -18,6 +18,9 @@ public interface RhiCommandBuffer extends RhiResource {
 
     void begin();
 
+    default void reset() {
+    }
+
     void end();
 
     default void setPrimitiveTopology(RhiPrimitiveTopology topology) {

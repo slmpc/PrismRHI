@@ -7,6 +7,8 @@ public enum RhiFormat {
     RGB8_UNORM,
     RGBA8_UNORM,
     BGRA8_UNORM,
+    RGBA8_SRGB,
+    BGRA8_SRGB,
     RGBA16_FLOAT,
     RGBA32_FLOAT,
     D24_UNORM_S8_UINT,

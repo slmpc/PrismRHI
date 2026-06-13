@@ -29,6 +29,11 @@ final class VulkanPhysicalDevice implements RhiPhysicalDevice {
         return info;
     }
 
+    @Override
+    public long nativeHandle() {
+        return handle.address();
+    }
+
     VkPhysicalDevice handle() {
         return handle;
     }

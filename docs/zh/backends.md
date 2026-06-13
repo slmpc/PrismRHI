@@ -51,11 +51,16 @@ for (var provider : PrismRHI.providers()) {
 - Dynamic Rendering 使用 `vkCmdBeginRendering` / `vkCmdEndRendering`。
 - Frame graph barrier 映射到 `vkCmdPipelineBarrier`。
 - 支持真实 multi-draw 时使用 `VK_EXT_multi_draw` 的 `vkCmdDrawMultiEXT` 和 `vkCmdDrawMultiIndexedEXT`。
+- 可以通过 `RhiContextCreateInfo.autoGlfwWindow(...)` 自动创建 GLFW window 和 Vulkan surface。
+- 也可以通过 `RhiContextCreateInfo.glfwWindow(...)` 或 `externalSurface(...)` 传入外部创建的 context/surface。
+- `RhiDevice.createSwapchain(...)` 提供最小 swapchain/acquire/present 支持。
+- `enableValidation(true)` 会启用 `VK_LAYER_KHRONOS_validation`，并在可用时创建 `VK_EXT_debug_utils` messenger，把 validation/performance/general 消息输出到 stderr。
 
 注意：
 
 - 如果设备不支持 `VK_EXT_multi_draw`，调用非 indirect 的 `multiDraw` / `multiDrawIndexed` 会抛出 `RhiException`。
 - Vulkan shader module 接受 SPIR-V。若传入 GLSL，需要 classpath 中存在 `prism-rhi-shaderc`。
+- 在 macOS 开发环境中，通常需要设置 `VULKAN_SDK` 或 `-Pvulkan_sdk`，以便 Gradle run task 找到 Vulkan loader、MoltenVK ICD manifest 和 validation layer manifest。
 - 当前同步抽象仍然保持简洁，队列提交以 command buffer 为主；更完整的 semaphore/fence/swapchain 抽象可后续扩展。
 
 ## OpenGL 4.1 后端
@@ -103,4 +108,3 @@ OpenGL 后端不负责创建窗口和 context。典型流程：
 4. 使用 RHI 的 device、queue、command buffer 录制渲染命令。
 
 这使 OpenGL 后端可以嵌入已有应用或引擎窗口系统，而不把 PrismRHI 绑定到某个窗口库。
-

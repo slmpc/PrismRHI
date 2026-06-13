@@ -27,11 +27,13 @@ import static org.lwjgl.vulkan.VK10.VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 import static org.lwjgl.vulkan.VK10.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 import static org.lwjgl.vulkan.VK10.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 import static org.lwjgl.vulkan.VK10.VK_FORMAT_B8G8R8A8_UNORM;
+import static org.lwjgl.vulkan.VK10.VK_FORMAT_B8G8R8A8_SRGB;
 import static org.lwjgl.vulkan.VK10.VK_FORMAT_D24_UNORM_S8_UINT;
 import static org.lwjgl.vulkan.VK10.VK_FORMAT_D32_SFLOAT;
 import static org.lwjgl.vulkan.VK10.VK_FORMAT_R16G16B16A16_SFLOAT;
 import static org.lwjgl.vulkan.VK10.VK_FORMAT_R32G32B32A32_SFLOAT;
 import static org.lwjgl.vulkan.VK10.VK_FORMAT_R8G8B8A8_UNORM;
+import static org.lwjgl.vulkan.VK10.VK_FORMAT_R8G8B8A8_SRGB;
 import static org.lwjgl.vulkan.VK10.VK_FORMAT_R8G8B8_UNORM;
 import static org.lwjgl.vulkan.VK10.VK_FORMAT_R8G8_UNORM;
 import static org.lwjgl.vulkan.VK10.VK_FORMAT_R8_UNORM;
@@ -104,10 +106,29 @@ final class VulkanSupport {
             case RGB8_UNORM -> VK_FORMAT_R8G8B8_UNORM;
             case RGBA8_UNORM -> VK_FORMAT_R8G8B8A8_UNORM;
             case BGRA8_UNORM -> VK_FORMAT_B8G8R8A8_UNORM;
+            case RGBA8_SRGB -> VK_FORMAT_R8G8B8A8_SRGB;
+            case BGRA8_SRGB -> VK_FORMAT_B8G8R8A8_SRGB;
             case RGBA16_FLOAT -> VK_FORMAT_R16G16B16A16_SFLOAT;
             case RGBA32_FLOAT -> VK_FORMAT_R32G32B32A32_SFLOAT;
             case D24_UNORM_S8_UINT -> VK_FORMAT_D24_UNORM_S8_UINT;
             case D32_FLOAT -> VK_FORMAT_D32_SFLOAT;
+        };
+    }
+
+    static RhiFormat rhiFormat(int format) {
+        return switch (format) {
+            case VK_FORMAT_R8_UNORM -> RhiFormat.R8_UNORM;
+            case VK_FORMAT_R8G8_UNORM -> RhiFormat.RG8_UNORM;
+            case VK_FORMAT_R8G8B8_UNORM -> RhiFormat.RGB8_UNORM;
+            case VK_FORMAT_R8G8B8A8_UNORM -> RhiFormat.RGBA8_UNORM;
+            case VK_FORMAT_B8G8R8A8_UNORM -> RhiFormat.BGRA8_UNORM;
+            case VK_FORMAT_R8G8B8A8_SRGB -> RhiFormat.RGBA8_SRGB;
+            case VK_FORMAT_B8G8R8A8_SRGB -> RhiFormat.BGRA8_SRGB;
+            case VK_FORMAT_R16G16B16A16_SFLOAT -> RhiFormat.RGBA16_FLOAT;
+            case VK_FORMAT_R32G32B32A32_SFLOAT -> RhiFormat.RGBA32_FLOAT;
+            case VK_FORMAT_D24_UNORM_S8_UINT -> RhiFormat.D24_UNORM_S8_UINT;
+            case VK_FORMAT_D32_SFLOAT -> RhiFormat.D32_FLOAT;
+            default -> throw new RhiException("Unsupported Vulkan format " + format);
         };
     }
 

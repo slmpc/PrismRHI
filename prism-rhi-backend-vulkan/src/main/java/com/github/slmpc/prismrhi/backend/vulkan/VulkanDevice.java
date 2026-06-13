@@ -1,6 +1,7 @@
 package com.github.slmpc.prismrhi.backend.vulkan;
 
 import com.github.slmpc.prismrhi.backend.BackendApi;
+import com.github.slmpc.prismrhi.context.RhiContext;
 import com.github.slmpc.prismrhi.resource.RhiBuffer;
 import com.github.slmpc.prismrhi.resource.RhiBufferCreateInfo;
 import com.github.slmpc.prismrhi.command.RhiCommandPool;
@@ -31,9 +32,13 @@ import com.github.slmpc.prismrhi.shader.RhiShaderCompilers;
 import com.github.slmpc.prismrhi.shader.RhiShaderModule;
 import com.github.slmpc.prismrhi.shader.RhiShaderModuleCreateInfo;
 import com.github.slmpc.prismrhi.shader.RhiShaderStage;
+import com.github.slmpc.prismrhi.swapchain.RhiSwapchain;
+import com.github.slmpc.prismrhi.swapchain.RhiSwapchainCreateInfo;
+import com.github.slmpc.prismrhi.sync.RhiSemaphore;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.vma.VmaAllocationCreateInfo;
 import org.lwjgl.util.vma.VmaAllocatorCreateInfo;
+import org.lwjgl.util.vma.VmaVulkanFunctions;
 import org.lwjgl.vulkan.VkBufferCreateInfo;
 import org.lwjgl.vulkan.VkDevice;
 import org.lwjgl.vulkan.VkDeviceCreateInfo;
@@ -50,6 +55,7 @@ import org.lwjgl.vulkan.VkPhysicalDeviceMultiDrawFeaturesEXT;
 import org.lwjgl.vulkan.VkExtensionProperties;
 import org.lwjgl.vulkan.VkQueue;
 import org.lwjgl.vulkan.VkSamplerCreateInfo;
+import org.lwjgl.vulkan.VkSemaphoreCreateInfo;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 
 import java.nio.ByteBuffer;
@@ -61,6 +67,8 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.vulkan.KHRPortabilitySubset.VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME;
+import static org.lwjgl.vulkan.KHRSwapchain.VK_KHR_SWAPCHAIN_EXTENSION_NAME;
 import static org.lwjgl.util.vma.Vma.vmaCreateAllocator;
 import static org.lwjgl.util.vma.Vma.vmaCreateBuffer;
 import static org.lwjgl.util.vma.Vma.vmaCreateImage;
@@ -82,16 +90,19 @@ import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 import static org.lwjgl.vulkan.VK10.VK_MAKE_VERSION;
 import static org.lwjgl.vulkan.VK10.vkCreateDevice;
 import static org.lwjgl.vulkan.VK10.vkEnumerateDeviceExtensionProperties;
 import static org.lwjgl.vulkan.VK10.vkCreateImageView;
 import static org.lwjgl.vulkan.VK10.vkCreateSampler;
+import static org.lwjgl.vulkan.VK10.vkCreateSemaphore;
 import static org.lwjgl.vulkan.VK10.vkCreateShaderModule;
 import static org.lwjgl.vulkan.VK10.vkDestroyDevice;
 import static org.lwjgl.vulkan.VK10.vkDestroyImageView;
 import static org.lwjgl.vulkan.VK10.vkDestroySampler;
+import static org.lwjgl.vulkan.VK10.vkDestroySemaphore;
 import static org.lwjgl.vulkan.VK10.vkDestroyShaderModule;
 import static org.lwjgl.vulkan.VK10.vkDeviceWaitIdle;
 import static org.lwjgl.vulkan.VK10.vkGetDeviceQueue;
@@ -107,6 +118,8 @@ final class VulkanDevice implements RhiDevice {
     private final VkDevice device;
     private final long allocator;
     private final Map<RhiQueueType, Integer> queueFamilies;
+    private final int presentQueueFamily;
+    private final RhiContext context;
     private final Map<RhiQueueType, RhiQueue> queues = new EnumMap<>(RhiQueueType.class);
     private final boolean multiDrawSupported;
     private boolean closed;
@@ -117,6 +130,8 @@ final class VulkanDevice implements RhiDevice {
             VkDevice device,
             long allocator,
             Map<RhiQueueType, Integer> queueFamilies,
+            int presentQueueFamily,
+            RhiContext context,
             boolean multiDrawSupported
     ) {
         this.instance = instance;
@@ -124,14 +139,26 @@ final class VulkanDevice implements RhiDevice {
         this.device = device;
         this.allocator = allocator;
         this.queueFamilies = Map.copyOf(queueFamilies);
+        this.presentQueueFamily = presentQueueFamily;
+        this.context = context;
         this.multiDrawSupported = multiDrawSupported;
         createQueues();
     }
 
-    static VulkanDevice create(VkInstance instance, VulkanPhysicalDevice physicalDevice, RhiDeviceCreateInfo createInfo) {
-        Map<RhiQueueType, Integer> queueFamilies = VulkanQueueFamily.select(physicalDevice.handle());
+    static VulkanDevice create(
+            VkInstance instance,
+            VulkanPhysicalDevice physicalDevice,
+            RhiDeviceCreateInfo createInfo,
+            RhiContext context
+    ) {
+        long surface = context == null ? 0L : context.nativeSurfaceHandle();
+        Map<RhiQueueType, Integer> queueFamilies = VulkanQueueFamily.select(physicalDevice.handle(), surface);
+        int presentQueueFamily = surface == 0L
+                ? queueFamilies.get(RhiQueueType.GRAPHICS)
+                : VulkanQueueFamily.presentFamily(physicalDevice.handle(), surface, queueFamilies.get(RhiQueueType.GRAPHICS));
         try (MemoryStack stack = MemoryStack.stackPush()) {
             Set<Integer> uniqueFamilies = new LinkedHashSet<>(queueFamilies.values());
+            uniqueFamilies.add(presentQueueFamily);
             VkDeviceQueueCreateInfo.Buffer queueCreateInfos = VkDeviceQueueCreateInfo.calloc(uniqueFamilies.size(), stack);
             int queueInfoIndex = 0;
             for (int family : uniqueFamilies) {
@@ -144,6 +171,12 @@ final class VulkanDevice implements RhiDevice {
 
             boolean multiDrawSupported = supportsExtension(physicalDevice.handle(), VK_EXT_MULTI_DRAW_EXTENSION_NAME);
             Set<String> enabledExtensions = new LinkedHashSet<>(createInfo.enabledExtensions());
+            if (context != null) {
+                enabledExtensions.add(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+            }
+            if (supportsExtension(physicalDevice.handle(), VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+                enabledExtensions.add(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+            }
             if (multiDrawSupported) {
                 enabledExtensions.add(VK_EXT_MULTI_DRAW_EXTENSION_NAME);
             }
@@ -196,7 +229,16 @@ final class VulkanDevice implements RhiDevice {
             VulkanSupport.check(vkCreateDevice(physicalDevice.handle(), deviceCreateInfo, null, devicePointer), "vkCreateDevice");
             VkDevice device = new VkDevice(devicePointer.get(0), physicalDevice.handle(), deviceCreateInfo);
             long allocator = createAllocator(stack, instance, physicalDevice.handle(), device);
-            return new VulkanDevice(instance, physicalDevice, device, allocator, queueFamilies, multiDrawSupported);
+            return new VulkanDevice(
+                    instance,
+                    physicalDevice,
+                    device,
+                    allocator,
+                    queueFamilies,
+                    presentQueueFamily,
+                    context,
+                    multiDrawSupported
+            );
         }
     }
 
@@ -231,7 +273,8 @@ final class VulkanDevice implements RhiDevice {
                 .physicalDevice(physicalDevice)
                 .device(device)
                 .instance(instance)
-                .vulkanApiVersion(VK_API_VERSION_1_3);
+                .vulkanApiVersion(VK_API_VERSION_1_3)
+                .pVulkanFunctions(VmaVulkanFunctions.calloc(stack).set(instance, device));
         var allocatorPointer = stack.mallocPointer(1);
         VulkanSupport.check(vmaCreateAllocator(allocatorCreateInfo, allocatorPointer), "vmaCreateAllocator");
         return allocatorPointer.get(0);
@@ -250,6 +293,11 @@ final class VulkanDevice implements RhiDevice {
     @Override
     public BackendApi api() {
         return BackendApi.VULKAN;
+    }
+
+    @Override
+    public long nativeHandle() {
+        return device.address();
     }
 
     @Override
@@ -447,6 +495,31 @@ final class VulkanDevice implements RhiDevice {
     }
 
     @Override
+    public RhiSemaphore createSemaphore() {
+        ensureOpen();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkSemaphoreCreateInfo createInfo = VkSemaphoreCreateInfo.calloc(stack)
+                    .sType(VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO);
+            LongBuffer semaphorePointer = stack.longs(0L);
+            VulkanSupport.check(vkCreateSemaphore(device, createInfo, null, semaphorePointer), "vkCreateSemaphore");
+            return new VulkanSemaphore(device, semaphorePointer.get(0));
+        }
+    }
+
+    @Override
+    public RhiSwapchain createSwapchain(RhiSwapchainCreateInfo createInfo) {
+        ensureOpen();
+        return VulkanSwapchain.create(
+                instance,
+                physicalDevice.handle(),
+                device,
+                createInfo,
+                queueFamilies.get(RhiQueueType.GRAPHICS),
+                presentQueueFamily
+        );
+    }
+
+    @Override
     public void waitIdle() {
         ensureOpen();
         VulkanSupport.check(vkDeviceWaitIdle(device), "vkDeviceWaitIdle");
@@ -468,7 +541,7 @@ final class VulkanDevice implements RhiDevice {
         }
     }
 
-    private record VulkanBuffer(long allocator, long handle, long allocation, long size) implements RhiBuffer {
+    record VulkanBuffer(long allocator, long handle, long allocation, long size) implements RhiBuffer {
         @Override
         public BackendApi api() {
             return BackendApi.VULKAN;
@@ -485,7 +558,7 @@ final class VulkanDevice implements RhiDevice {
         }
     }
 
-    private record VulkanImage(long allocator, long handle, long allocation, RhiExtent3D extent,
+    record VulkanImage(long allocator, long handle, long allocation, RhiExtent3D extent,
                                RhiFormat format) implements RhiImage {
         @Override
         public BackendApi api() {
@@ -499,11 +572,13 @@ final class VulkanDevice implements RhiDevice {
 
         @Override
         public void close() {
-            vmaDestroyImage(allocator, handle, allocation);
+            if (allocator != 0L && allocation != 0L) {
+                vmaDestroyImage(allocator, handle, allocation);
+            }
         }
     }
 
-    private record VulkanImageView(
+    record VulkanImageView(
             VkDevice device,
             long handle,
             RhiImage image,
@@ -544,6 +619,23 @@ final class VulkanDevice implements RhiDevice {
         @Override
         public void close() {
             vkDestroySampler(device, handle, null);
+        }
+    }
+
+    record VulkanSemaphore(VkDevice device, long handle) implements RhiSemaphore {
+        @Override
+        public BackendApi api() {
+            return BackendApi.VULKAN;
+        }
+
+        @Override
+        public long nativeHandle() {
+            return handle;
+        }
+
+        @Override
+        public void close() {
+            vkDestroySemaphore(device, handle, null);
         }
     }
 

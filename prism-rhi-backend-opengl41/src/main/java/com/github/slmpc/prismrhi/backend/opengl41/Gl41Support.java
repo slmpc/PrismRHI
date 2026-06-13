@@ -62,6 +62,7 @@ import static org.lwjgl.opengl.GL30.GL_RGB8;
 import static org.lwjgl.opengl.GL30.GL_RGBA16F;
 import static org.lwjgl.opengl.GL30.GL_RGBA32F;
 import static org.lwjgl.opengl.GL30.GL_RGBA8;
+import static org.lwjgl.opengl.GL21.GL_SRGB8_ALPHA8;
 import static org.lwjgl.opengl.GL30.GL_UNSIGNED_INT_24_8;
 import static org.lwjgl.opengl.GL30.GL_RG;
 import static org.lwjgl.opengl.GL40.GL_PATCHES;
@@ -188,7 +189,7 @@ final class Gl41Support {
             case RGBA8_UNORM, BGRA8_UNORM -> new VertexAttributeFormat(4, GL_UNSIGNED_BYTE, true);
             case RGBA16_FLOAT -> new VertexAttributeFormat(4, GL_FLOAT, false);
             case RGBA32_FLOAT -> new VertexAttributeFormat(4, GL_FLOAT, false);
-            case D24_UNORM_S8_UINT, D32_FLOAT, UNDEFINED ->
+            case RGBA8_SRGB, BGRA8_SRGB, D24_UNORM_S8_UINT, D32_FLOAT, UNDEFINED ->
                     throw new RhiException(format + " is not a valid OpenGL vertex attribute format");
         };
     }
@@ -217,6 +218,8 @@ final class Gl41Support {
             case RGB8_UNORM -> new TextureFormat(GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE);
             case RGBA8_UNORM -> new TextureFormat(GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
             case BGRA8_UNORM -> new TextureFormat(GL_RGBA8, GL_BGRA, GL_UNSIGNED_BYTE);
+            case RGBA8_SRGB -> new TextureFormat(GL_SRGB8_ALPHA8, GL_RGBA, GL_UNSIGNED_BYTE);
+            case BGRA8_SRGB -> new TextureFormat(GL_SRGB8_ALPHA8, GL_BGRA, GL_UNSIGNED_BYTE);
             case RGBA16_FLOAT -> new TextureFormat(GL_RGBA16F, GL_RGBA, GL_FLOAT);
             case RGBA32_FLOAT -> new TextureFormat(GL_RGBA32F, GL_RGBA, GL_FLOAT);
             case D24_UNORM_S8_UINT -> new TextureFormat(GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8);

@@ -1,6 +1,7 @@
 package com.github.slmpc.prismrhi.device;
 
 import com.github.slmpc.prismrhi.backend.BackendFeature;
+import com.github.slmpc.prismrhi.context.RhiContext;
 import com.github.slmpc.prismrhi.queue.RhiQueueRequest;
 import com.github.slmpc.prismrhi.queue.RhiQueueType;
 
@@ -14,7 +15,8 @@ public record RhiDeviceCreateInfo(
         String debugName,
         List<RhiQueueRequest> queues,
         Set<BackendFeature> enabledFeatures,
-        Set<String> enabledExtensions
+        Set<String> enabledExtensions,
+        RhiContext context
 ) {
     public RhiDeviceCreateInfo {
         debugName = debugName == null ? "" : debugName;
@@ -34,6 +36,7 @@ public record RhiDeviceCreateInfo(
         private final List<RhiQueueRequest> queues = new ArrayList<>();
         private final Set<BackendFeature> enabledFeatures = new LinkedHashSet<>();
         private final Set<String> enabledExtensions = new LinkedHashSet<>();
+        private RhiContext context;
 
         public Builder debugName(String debugName) {
             this.debugName = debugName;
@@ -57,8 +60,13 @@ public record RhiDeviceCreateInfo(
             return this;
         }
 
+        public Builder context(RhiContext context) {
+            this.context = context;
+            return this;
+        }
+
         public RhiDeviceCreateInfo build() {
-            return new RhiDeviceCreateInfo(debugName, queues, enabledFeatures, enabledExtensions);
+            return new RhiDeviceCreateInfo(debugName, queues, enabledFeatures, enabledExtensions, context);
         }
     }
 }

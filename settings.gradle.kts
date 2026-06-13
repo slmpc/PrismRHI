@@ -6,4 +6,5 @@ include(
     "prism-rhi-backend-opengl-dsa",
     "prism-rhi-backend-vulkan",
     "prism-rhi-shaderc",
+    "prism-rhi-demo-triangle",
 )

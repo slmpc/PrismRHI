@@ -38,6 +38,14 @@ var instance = PrismRHI.createInstance(
 );
 ```
 
+Vulkan 后端在 `enableValidation(true)` 时会请求 `VK_LAYER_KHRONOS_validation`，并通过 `VK_EXT_debug_utils` 把验证层消息输出到 stderr。macOS 下运行 Gradle demo 时可以这样启用：
+
+```bash
+VULKAN_SDK=/path/to/vulkan-sdk/macOS \
+VULKAN_VALIDATION_LAYER=1 \
+./gradlew :prism-rhi-demo-triangle:runTriangleDemo
+```
+
 也可以先查看当前进程中可用的后端：
 
 ```java
@@ -133,3 +141,13 @@ commandPool.close();
 device.close();
 instance.close();
 ```
+
+## Vulkan 窗口 Demo
+
+仓库内的 Vulkan 三角形示例可以直接运行：
+
+```bash
+./gradlew :prism-rhi-demo-triangle:runTriangleDemo
+```
+
+它使用 RHI 自动创建 GLFW window、Vulkan surface 和 swapchain；详见 [Vulkan 三角形 Demo](triangle-demo.md)。

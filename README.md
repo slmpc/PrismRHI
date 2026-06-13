@@ -9,8 +9,21 @@ PrismRHI is a LWJGL-based Java rendering hardware interface with a Vulkan-style 
 - `prism-rhi-backend-opengl-dsa`: modern OpenGL backend requiring OpenGL 4.5 DSA support.
 - `prism-rhi-backend-vulkan`: Vulkan backend using LWJGL Vulkan and LWJGL VMA.
 - `prism-rhi-shaderc`: optional LWJGL shaderc integration for compiling GLSL to SPIR-V.
+- `prism-rhi-demo-triangle`: runnable Vulkan triangle demo using an RHI-managed GLFW window and swapchain.
 
 Applications should depend on `prism-rhi-core` plus only the backend jars they want to ship. Backends are discovered with Java `ServiceLoader`, so omitting a backend module also omits its LWJGL backend dependency from the package.
+
+## Vulkan Triangle Demo
+
+Run the windowed Vulkan demo with:
+
+```bash
+./gradlew :prism-rhi-demo-triangle:runTriangleDemo
+```
+
+The demo uses `RhiContextCreateInfo.autoGlfwWindow(...)` so the Vulkan backend creates the GLFW window, surface, device, swapchain, semaphores, and dynamic-rendering frame. Applications can also pass an existing GLFW window or native Vulkan surface through `RhiContextCreateInfo.glfwWindow(...)` / `externalSurface(...)`.
+
+On macOS the Gradle run task automatically adds `-XstartOnFirstThread`, which GLFW requires for window creation.
 
 ## Backend Selection
 

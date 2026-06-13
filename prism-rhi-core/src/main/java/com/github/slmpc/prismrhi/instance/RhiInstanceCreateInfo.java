@@ -1,6 +1,7 @@
 package com.github.slmpc.prismrhi.instance;
 
 import com.github.slmpc.prismrhi.backend.BackendApi;
+import com.github.slmpc.prismrhi.context.RhiContextCreateInfo;
 
 import java.util.LinkedHashSet;
 import java.util.Objects;
@@ -10,7 +11,8 @@ public record RhiInstanceCreateInfo(
         BackendApi backend,
         String applicationName,
         boolean enableValidation,
-        Set<String> enabledExtensions
+        Set<String> enabledExtensions,
+        RhiContextCreateInfo contextCreateInfo
 ) {
     public RhiInstanceCreateInfo {
         backend = Objects.requireNonNull(backend, "backend");
@@ -27,6 +29,7 @@ public record RhiInstanceCreateInfo(
         private String applicationName = "PrismRHI Application";
         private boolean enableValidation;
         private final Set<String> enabledExtensions = new LinkedHashSet<>();
+        private RhiContextCreateInfo contextCreateInfo;
 
         private Builder(BackendApi backend) {
             this.backend = Objects.requireNonNull(backend, "backend");
@@ -58,8 +61,19 @@ public record RhiInstanceCreateInfo(
             return this;
         }
 
+        public Builder context(RhiContextCreateInfo contextCreateInfo) {
+            this.contextCreateInfo = contextCreateInfo;
+            return this;
+        }
+
         public RhiInstanceCreateInfo build() {
-            return new RhiInstanceCreateInfo(backend, applicationName, enableValidation, enabledExtensions);
+            return new RhiInstanceCreateInfo(
+                    backend,
+                    applicationName,
+                    enableValidation,
+                    enabledExtensions,
+                    contextCreateInfo
+            );
         }
     }
 }
