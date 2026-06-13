@@ -21,6 +21,7 @@ import com.github.slmpc.prismrhi.descriptor.RhiDescriptorSet;
 import com.github.slmpc.prismrhi.pipeline.RhiGraphicsPipeline;
 import com.github.slmpc.prismrhi.queue.RhiQueueType;
 import com.github.slmpc.prismrhi.rendering.RhiClearValue;
+import com.github.slmpc.prismrhi.rendering.RhiImageLayout;
 import com.github.slmpc.prismrhi.rendering.RhiRect2D;
 import com.github.slmpc.prismrhi.rendering.RhiRenderingAttachment;
 import com.github.slmpc.prismrhi.rendering.RhiRenderingInfo;
@@ -520,16 +521,20 @@ final class VulkanCommandBuffer implements RhiCommandBuffer {
                 .resolveImageView(NULL)
                 .loadOp(VulkanSupport.loadOp(attachment.loadOp()))
                 .storeOp(VulkanSupport.storeOp(attachment.storeOp()));
-        fillClearValue(attachmentInfo.clearValue(), attachment.clearValue());
+        fillClearValue(attachmentInfo.clearValue(), attachment);
     }
 
-    private static void fillClearValue(org.lwjgl.vulkan.VkClearValue clearValue, RhiClearValue value) {
+    private static void fillClearValue(org.lwjgl.vulkan.VkClearValue clearValue, RhiRenderingAttachment attachment) {
+        RhiClearValue value = attachment.clearValue();
+        if (attachment.layout() == RhiImageLayout.DEPTH_STENCIL_ATTACHMENT) {
+            clearValue.depthStencil().depth(value.depth());
+            clearValue.depthStencil().stencil(value.stencil());
+            return;
+        }
         clearValue.color().float32(0, value.r());
         clearValue.color().float32(1, value.g());
         clearValue.color().float32(2, value.b());
         clearValue.color().float32(3, value.a());
-        clearValue.depthStencil().depth(value.depth());
-        clearValue.depthStencil().stencil(value.stencil());
     }
 
     private static VkRect2D vkRect(RhiRect2D rect, MemoryStack stack) {

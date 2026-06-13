@@ -112,6 +112,7 @@ project(":prism-rhi-demo-triangle") {
     dependencies {
         "implementation"(project(":prism-rhi-core"))
         "implementation"(project(":prism-rhi-backend-vulkan"))
+        "implementation"("org.joml:joml:1.10.8")
         "runtimeOnly"(project(":prism-rhi-shaderc"))
     }
 
