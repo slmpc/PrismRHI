@@ -45,6 +45,12 @@ public interface RhiGlStateBridge {
 
     void bindBufferRange(int target, int index, int buffer, long offset, long size);
 
+    int genVertexArray();
+
+    void bindVertexArray(int array);
+
+    void deleteVertexArray(int array);
+
     void enableVertexAttribArray(int index);
 
     void vertexAttribPointer(int index, int size, int type, boolean normalized, int stride, long pointer);

@@ -31,6 +31,7 @@ import com.github.slmpc.prismrhi.rendering.RhiViewport;
 import com.github.slmpc.prismrhi.resource.RhiBufferCreateInfo;
 import com.github.slmpc.prismrhi.resource.RhiImageAspect;
 import com.github.slmpc.prismrhi.resource.RhiImage;
+import com.github.slmpc.prismrhi.resource.RhiImageUploadInfo;
 import com.github.slmpc.prismrhi.resource.RhiImageView;
 import org.junit.jupiter.api.Test;
 
@@ -83,6 +84,15 @@ class RhiCreateInfoTest {
     @Test
     void bufferSizeMustBePositive() {
         assertThrows(IllegalArgumentException.class, () -> RhiBufferCreateInfo.builder(0).build());
+    }
+
+    @Test
+    void imageUploadInfoCalculatesTightRowLayout() {
+        var image = new TestImage();
+        var uploadInfo = RhiImageUploadInfo.of(image);
+
+        assertEquals(1280L * image.format().bytesPerPixel() * 720L, uploadInfo.requiredBytes(image.format()));
+        assertEquals(0, uploadInfo.bufferRowLength(image.format()));
     }
 
     @Test

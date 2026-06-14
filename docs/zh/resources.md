@@ -61,6 +61,20 @@ try {
 
 要从 CPU 写入资源，创建 buffer 时使用 `RhiMemoryUsage.CPU_TO_GPU`。`GPU_ONLY` 更适合已经通过其他路径上传完成、长期驻留的资源。
 
+如果要把 buffer 中的数据拷到 image，先准备一个 staging buffer，再在命令缓冲里录制：
+
+```java
+cmd.pipelineBarrier(RhiPipelineBarrier.builder()
+        .image(RhiImageBarrier.of(colorImage, RhiResourceState.UNDEFINED, RhiResourceState.TRANSFER_DST))
+        .build());
+cmd.copyBufferToImage(stagingBuffer, colorImage);
+cmd.pipelineBarrier(RhiPipelineBarrier.builder()
+        .image(RhiImageBarrier.of(colorImage, RhiResourceState.TRANSFER_DST, RhiResourceState.SAMPLED_IMAGE))
+        .build());
+```
+
+`copyBufferToImage` 负责传输，`pipelineBarrier` 负责状态切换。
+
 ## Image
 
 Image 使用 extent、format、usage 和 memory usage 创建：

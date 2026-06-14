@@ -4,6 +4,7 @@ import com.github.slmpc.prismrhi.backend.BackendApi;
 import com.github.slmpc.prismrhi.barrier.RhiBufferBarrier;
 import com.github.slmpc.prismrhi.barrier.RhiImageBarrier;
 import com.github.slmpc.prismrhi.barrier.RhiPipelineBarrier;
+import com.github.slmpc.prismrhi.barrier.RhiResourceState;
 import com.github.slmpc.prismrhi.command.RhiCommandBuffer;
 import com.github.slmpc.prismrhi.command.RhiCommandBufferLevel;
 import com.github.slmpc.prismrhi.command.RhiDrawCommand;
@@ -28,8 +29,11 @@ import com.github.slmpc.prismrhi.rendering.RhiRenderingInfo;
 import com.github.slmpc.prismrhi.rendering.RhiVertexBufferBinding;
 import com.github.slmpc.prismrhi.rendering.RhiViewport;
 import com.github.slmpc.prismrhi.resource.RhiBuffer;
+import com.github.slmpc.prismrhi.resource.RhiImage;
+import com.github.slmpc.prismrhi.resource.RhiImageUploadInfo;
 import com.github.slmpc.prismrhi.resource.RhiIndexType;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.vulkan.VkBufferImageCopy;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkCommandBufferBeginInfo;
 import org.lwjgl.vulkan.VkDevice;
@@ -58,6 +62,7 @@ import static org.lwjgl.vulkan.VK10.vkCmdBindDescriptorSets;
 import static org.lwjgl.vulkan.VK10.vkCmdBindIndexBuffer;
 import static org.lwjgl.vulkan.VK10.vkCmdBindPipeline;
 import static org.lwjgl.vulkan.VK10.vkCmdBindVertexBuffers;
+import static org.lwjgl.vulkan.VK10.vkCmdCopyBufferToImage;
 import static org.lwjgl.vulkan.VK10.vkCmdDraw;
 import static org.lwjgl.vulkan.VK10.vkCmdDrawIndexed;
 import static org.lwjgl.vulkan.VK10.vkCmdDrawIndexedIndirect;
@@ -293,6 +298,45 @@ final class VulkanCommandBuffer implements RhiCommandBuffer {
     }
 
     @Override
+    public void copyBufferToImage(RhiBuffer source, RhiImage destination, RhiImageUploadInfo uploadInfo) {
+        requireBackendBuffer(source, "Vulkan copyBufferToImage");
+        requireBackendImage(destination, "Vulkan copyBufferToImage");
+        uploadInfo.validateFor(destination);
+        if (uploadInfo.mipLevel() != 0 || uploadInfo.arrayLayer() != 0 || uploadInfo.layerCount() != 1) {
+            throw new RhiException("Vulkan copyBufferToImage currently supports mip level 0 and array layer 0 only");
+        }
+        if (source.size() < uploadInfo.requiredBytes(destination.format())) {
+            throw new IllegalArgumentException("source buffer is too small for image upload");
+        }
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkBufferImageCopy.Buffer region = VkBufferImageCopy.calloc(1, stack)
+                    .bufferOffset(uploadInfo.bufferOffset())
+                    .bufferRowLength(uploadInfo.bufferRowLength(destination.format()))
+                    .bufferImageHeight(uploadInfo.bufferImageHeight(destination.format()));
+            region.imageSubresource()
+                    .aspectMask(VulkanSupport.imageAspect(RhiImageBarrier.defaultAspects(destination)))
+                    .mipLevel(uploadInfo.mipLevel())
+                    .baseArrayLayer(uploadInfo.arrayLayer())
+                    .layerCount(uploadInfo.layerCount());
+            region.imageOffset()
+                    .x(uploadInfo.x())
+                    .y(uploadInfo.y())
+                    .z(uploadInfo.z());
+            region.imageExtent()
+                    .width(uploadInfo.width())
+                    .height(uploadInfo.height())
+                    .depth(uploadInfo.depth());
+            vkCmdCopyBufferToImage(
+                    commandBuffer,
+                    source.nativeHandle(),
+                    destination.nativeHandle(),
+                    VulkanSupport.imageLayout(RhiResourceState.TRANSFER_DST),
+                    region
+            );
+        }
+    }
+
+    @Override
     public void draw(RhiDrawCommand command) {
         vkCmdDraw(
                 commandBuffer,
@@ -442,6 +486,12 @@ final class VulkanCommandBuffer implements RhiCommandBuffer {
     private void requireBackendBuffer(com.github.slmpc.prismrhi.resource.RhiBuffer buffer, String operation) {
         if (buffer.api() != BackendApi.VULKAN) {
             throw new RhiException(operation + " requires a Vulkan buffer");
+        }
+    }
+
+    private void requireBackendImage(RhiImage image, String operation) {
+        if (image.api() != BackendApi.VULKAN) {
+            throw new RhiException(operation + " requires a Vulkan image");
         }
     }
 

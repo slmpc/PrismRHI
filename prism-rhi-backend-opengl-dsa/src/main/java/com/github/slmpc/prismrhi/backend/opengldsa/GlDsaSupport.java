@@ -30,6 +30,7 @@ import static org.lwjgl.opengl.GL11.GL_NEAREST;
 import static org.lwjgl.opengl.GL11.GL_POINTS;
 import static org.lwjgl.opengl.GL11.GL_RENDERER;
 import static org.lwjgl.opengl.GL11.GL_REPEAT;
+import static org.lwjgl.opengl.GL11.GL_RED;
 import static org.lwjgl.opengl.GL11.GL_RGB;
 import static org.lwjgl.opengl.GL11.GL_RGBA;
 import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
@@ -287,7 +288,7 @@ final class GlDsaSupport {
 
     static TextureFormat textureFormat(RhiFormat format) {
         return switch (format) {
-            case R8_UNORM -> new TextureFormat(GL_R8, GL_RG, GL_UNSIGNED_BYTE);
+            case R8_UNORM -> new TextureFormat(GL_R8, GL_RED, GL_UNSIGNED_BYTE);
             case RG8_UNORM -> new TextureFormat(GL_RG8, GL_RG, GL_UNSIGNED_BYTE);
             case RGB8_UNORM -> new TextureFormat(GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE);
             case RGBA8_UNORM -> new TextureFormat(GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);

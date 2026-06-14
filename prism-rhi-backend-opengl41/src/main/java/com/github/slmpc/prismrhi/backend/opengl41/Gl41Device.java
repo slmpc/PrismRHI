@@ -38,10 +38,11 @@ import static org.lwjgl.opengl.GL11.GL_TEXTURE_MAG_FILTER;
 import static org.lwjgl.opengl.GL11.GL_TEXTURE_MIN_FILTER;
 import static org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_S;
 import static org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_T;
-import static org.lwjgl.opengl.GL11.glBindTexture;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_BINDING_2D;
 import static org.lwjgl.opengl.GL11.glDeleteTextures;
 import static org.lwjgl.opengl.GL11.glFinish;
 import static org.lwjgl.opengl.GL11.glGenTextures;
+import static org.lwjgl.opengl.GL11.glGetInteger;
 import static org.lwjgl.opengl.GL11.glTexImage2D;
 import static org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL15.glBindBuffer;
@@ -105,20 +106,24 @@ final class Gl41Device implements RhiDevice {
         }
         Gl41Support.TextureFormat format = Gl41Support.textureFormat(createInfo.format());
         int handle = glGenTextures();
-        glBindTexture(GL_TEXTURE_2D, handle);
-        glTexImage2D(
-                GL_TEXTURE_2D,
-                0,
-                format.internalFormat(),
-                createInfo.extent().width(),
-                createInfo.extent().height(),
-                0,
-                format.externalFormat(),
-                format.type(),
-                0L
-        );
-        Gl41Support.initializeTextureParameters();
-        glBindTexture(GL_TEXTURE_2D, 0);
+        int previousTexture = glGetInteger(GL_TEXTURE_BINDING_2D);
+        glStateBridge.bindTexture(GL_TEXTURE_2D, handle);
+        try {
+            glTexImage2D(
+                    GL_TEXTURE_2D,
+                    0,
+                    format.internalFormat(),
+                    createInfo.extent().width(),
+                    createInfo.extent().height(),
+                    0,
+                    format.externalFormat(),
+                    format.type(),
+                    0L
+            );
+            Gl41Support.initializeTextureParameters();
+        } finally {
+            glStateBridge.bindTexture(GL_TEXTURE_2D, previousTexture);
+        }
         return new Gl41Image(handle, createInfo.extent(), createInfo.format());
     }
 

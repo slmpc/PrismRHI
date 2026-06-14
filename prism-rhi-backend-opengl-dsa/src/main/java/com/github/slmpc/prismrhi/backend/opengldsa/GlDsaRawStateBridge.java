@@ -22,9 +22,12 @@ import static org.lwjgl.opengl.GL20.glUseProgram;
 import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
 import static org.lwjgl.opengl.GL30.glBindBufferRange;
 import static org.lwjgl.opengl.GL30.glBindFramebuffer;
+import static org.lwjgl.opengl.GL30.glBindVertexArray;
 import static org.lwjgl.opengl.GL30.glDeleteFramebuffers;
+import static org.lwjgl.opengl.GL30.glDeleteVertexArrays;
 import static org.lwjgl.opengl.GL30.glFramebufferTexture2D;
 import static org.lwjgl.opengl.GL30.glGenFramebuffers;
+import static org.lwjgl.opengl.GL30.glGenVertexArrays;
 import static org.lwjgl.opengl.GL33.glBindSampler;
 import static org.lwjgl.opengl.GL33.glVertexAttribDivisor;
 
@@ -142,6 +145,21 @@ final class GlDsaRawStateBridge implements RhiGlStateBridge {
     @Override
     public void bindBufferRange(int target, int index, int buffer, long offset, long size) {
         glBindBufferRange(target, index, buffer, offset, size);
+    }
+
+    @Override
+    public int genVertexArray() {
+        return glGenVertexArrays();
+    }
+
+    @Override
+    public void bindVertexArray(int array) {
+        glBindVertexArray(array);
+    }
+
+    @Override
+    public void deleteVertexArray(int array) {
+        glDeleteVertexArrays(array);
     }
 
     @Override

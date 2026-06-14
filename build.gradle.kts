@@ -2,7 +2,7 @@ import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
 
 group = "com.github.slmpc.prismrhi"
-version = "1.0-SNAPSHOT"
+version = "0.0.1"
 
 val lwjglVersion = "3.4.1"
 val publishableProjects = setOf(

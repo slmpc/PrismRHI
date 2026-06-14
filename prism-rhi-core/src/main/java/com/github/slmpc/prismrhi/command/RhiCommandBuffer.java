@@ -1,6 +1,8 @@
 package com.github.slmpc.prismrhi.command;
 
 import com.github.slmpc.prismrhi.resource.RhiBuffer;
+import com.github.slmpc.prismrhi.resource.RhiImage;
+import com.github.slmpc.prismrhi.resource.RhiImageUploadInfo;
 import com.github.slmpc.prismrhi.resource.RhiIndexType;
 import com.github.slmpc.prismrhi.resource.RhiResource;
 import com.github.slmpc.prismrhi.barrier.RhiPipelineBarrier;
@@ -63,6 +65,13 @@ public interface RhiCommandBuffer extends RhiResource {
 
     default void bindIndexBuffer(RhiBuffer buffer, long offset, RhiIndexType indexType) {
         setIndexType(indexType);
+    }
+
+    default void copyBufferToImage(RhiBuffer source, RhiImage destination, RhiImageUploadInfo uploadInfo) {
+    }
+
+    default void copyBufferToImage(RhiBuffer source, RhiImage destination) {
+        copyBufferToImage(source, destination, RhiImageUploadInfo.of(destination));
     }
 
     void draw(RhiDrawCommand command);
