@@ -1,6 +1,7 @@
 package com.github.slmpc.prismrhi.backend.opengldsa;
 
 import com.github.slmpc.prismrhi.backend.BackendApi;
+import com.github.slmpc.prismrhi.backend.RhiGlStateBridge;
 import com.github.slmpc.prismrhi.resource.RhiBuffer;
 import com.github.slmpc.prismrhi.resource.RhiBufferCreateInfo;
 import com.github.slmpc.prismrhi.command.RhiCommandPool;
@@ -58,9 +59,11 @@ import static org.lwjgl.opengl.GL30.GL_MAP_WRITE_BIT;
 
 final class GlDsaDevice implements RhiDevice {
     private final Map<RhiQueueType, RhiQueue> queues = new EnumMap<>(RhiQueueType.class);
+    private final RhiGlStateBridge glStateBridge;
     private boolean closed;
 
-    GlDsaDevice() {
+    GlDsaDevice(RhiGlStateBridge glStateBridge) {
+        this.glStateBridge = glStateBridge == null ? GlDsaRawStateBridge.INSTANCE : glStateBridge;
         queues.put(RhiQueueType.GRAPHICS, new GlDsaQueue(RhiQueueType.GRAPHICS));
         queues.put(RhiQueueType.COMPUTE, new GlDsaQueue(RhiQueueType.COMPUTE));
         queues.put(RhiQueueType.TRANSFER, new GlDsaQueue(RhiQueueType.TRANSFER));
@@ -141,7 +144,7 @@ final class GlDsaDevice implements RhiDevice {
     @Override
     public RhiCommandPool createCommandPool(RhiCommandPoolCreateInfo createInfo) {
         ensureOpen();
-        return new GlDsaCommandPool(createInfo.queueType());
+        return new GlDsaCommandPool(createInfo.queueType(), glStateBridge);
     }
 
     @Override

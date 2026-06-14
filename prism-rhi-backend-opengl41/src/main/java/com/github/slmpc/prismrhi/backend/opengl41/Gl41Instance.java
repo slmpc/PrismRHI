@@ -35,7 +35,7 @@ final class Gl41Instance implements RhiInstance {
         if (!(physicalDevice instanceof Gl41PhysicalDevice)) {
             throw new RhiException("Physical device was not created by this OpenGL 4.1 instance");
         }
-        return new Gl41Device();
+        return new Gl41Device(createInfo == null ? null : createInfo.glStateBridge());
     }
 
     @Override

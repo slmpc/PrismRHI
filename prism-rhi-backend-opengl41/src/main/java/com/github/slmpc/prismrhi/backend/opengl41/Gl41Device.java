@@ -1,6 +1,7 @@
 package com.github.slmpc.prismrhi.backend.opengl41;
 
 import com.github.slmpc.prismrhi.backend.BackendApi;
+import com.github.slmpc.prismrhi.backend.RhiGlStateBridge;
 import com.github.slmpc.prismrhi.resource.RhiBuffer;
 import com.github.slmpc.prismrhi.resource.RhiBufferCreateInfo;
 import com.github.slmpc.prismrhi.command.RhiCommandPool;
@@ -62,9 +63,11 @@ import static org.lwjgl.opengl.GL33.glSamplerParameteri;
 
 final class Gl41Device implements RhiDevice {
     private final Map<RhiQueueType, RhiQueue> queues = new EnumMap<>(RhiQueueType.class);
+    private final RhiGlStateBridge glStateBridge;
     private boolean closed;
 
-    Gl41Device() {
+    Gl41Device(RhiGlStateBridge glStateBridge) {
+        this.glStateBridge = glStateBridge == null ? Gl41RawStateBridge.INSTANCE : glStateBridge;
         queues.put(RhiQueueType.GRAPHICS, new Gl41Queue(RhiQueueType.GRAPHICS));
         queues.put(RhiQueueType.TRANSFER, new Gl41Queue(RhiQueueType.TRANSFER));
     }
@@ -152,7 +155,7 @@ final class Gl41Device implements RhiDevice {
     @Override
     public RhiCommandPool createCommandPool(RhiCommandPoolCreateInfo createInfo) {
         ensureOpen();
-        return new Gl41CommandPool(createInfo.queueType());
+        return new Gl41CommandPool(createInfo.queueType(), glStateBridge);
     }
 
     @Override

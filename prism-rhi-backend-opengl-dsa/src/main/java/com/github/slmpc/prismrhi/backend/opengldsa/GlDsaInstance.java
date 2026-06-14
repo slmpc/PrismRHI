@@ -35,7 +35,7 @@ final class GlDsaInstance implements RhiInstance {
         if (!(physicalDevice instanceof GlDsaPhysicalDevice)) {
             throw new RhiException("Physical device was not created by this OpenGL DSA instance");
         }
-        return new GlDsaDevice();
+        return new GlDsaDevice(createInfo == null ? null : createInfo.glStateBridge());
     }
 
     @Override

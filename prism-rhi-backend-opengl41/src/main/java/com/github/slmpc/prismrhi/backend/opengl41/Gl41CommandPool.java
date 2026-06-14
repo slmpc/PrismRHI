@@ -4,6 +4,7 @@ import com.github.slmpc.prismrhi.backend.BackendApi;
 import com.github.slmpc.prismrhi.command.RhiCommandBuffer;
 import com.github.slmpc.prismrhi.command.RhiCommandBufferLevel;
 import com.github.slmpc.prismrhi.command.RhiCommandPool;
+import com.github.slmpc.prismrhi.backend.RhiGlStateBridge;
 import com.github.slmpc.prismrhi.queue.RhiQueueType;
 
 import java.util.concurrent.atomic.AtomicLong;
@@ -13,10 +14,12 @@ final class Gl41CommandPool implements RhiCommandPool {
 
     private final long handle = NEXT_HANDLE.getAndIncrement();
     private final RhiQueueType queueType;
+    private final RhiGlStateBridge glStateBridge;
     private boolean closed;
 
-    Gl41CommandPool(RhiQueueType queueType) {
+    Gl41CommandPool(RhiQueueType queueType, RhiGlStateBridge glStateBridge) {
         this.queueType = queueType;
+        this.glStateBridge = glStateBridge;
     }
 
     @Override
@@ -34,7 +37,7 @@ final class Gl41CommandPool implements RhiCommandPool {
         if (closed) {
             throw new IllegalStateException("OpenGL 4.1 command pool is closed");
         }
-        return new Gl41CommandBuffer(level, queueType);
+        return new Gl41CommandBuffer(level, queueType, glStateBridge);
     }
 
     @Override

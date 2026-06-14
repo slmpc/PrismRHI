@@ -1,6 +1,7 @@
 package com.github.slmpc.prismrhi.backend.opengldsa;
 
 import com.github.slmpc.prismrhi.backend.BackendApi;
+import com.github.slmpc.prismrhi.backend.RhiGlStateBridge;
 import com.github.slmpc.prismrhi.command.RhiCommandBuffer;
 import com.github.slmpc.prismrhi.command.RhiCommandBufferLevel;
 import com.github.slmpc.prismrhi.command.RhiCommandPool;
@@ -14,10 +15,12 @@ final class GlDsaCommandPool implements RhiCommandPool {
 
     private final long handle = NEXT_HANDLE.getAndIncrement();
     private final RhiQueueType queueType;
+    private final RhiGlStateBridge glStateBridge;
     private boolean closed;
 
-    GlDsaCommandPool(RhiQueueType queueType) {
+    GlDsaCommandPool(RhiQueueType queueType, RhiGlStateBridge glStateBridge) {
         this.queueType = queueType;
+        this.glStateBridge = glStateBridge;
     }
 
     @Override
@@ -35,7 +38,7 @@ final class GlDsaCommandPool implements RhiCommandPool {
         if (closed) {
             throw new RhiException("OpenGL DSA command pool is closed");
         }
-        return new GlDsaCommandBuffer(level, queueType);
+        return new GlDsaCommandBuffer(level, queueType, glStateBridge);
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.github.slmpc.prismrhi.backend.opengl41;
 
 import com.github.slmpc.prismrhi.backend.BackendApi;
+import com.github.slmpc.prismrhi.backend.RhiGlStateBridge;
 import com.github.slmpc.prismrhi.command.RhiCommandBuffer;
 import com.github.slmpc.prismrhi.command.RhiCommandBufferLevel;
 import com.github.slmpc.prismrhi.command.RhiDrawCommand;
@@ -21,6 +22,7 @@ import com.github.slmpc.prismrhi.descriptor.RhiDescriptorType;
 import com.github.slmpc.prismrhi.descriptor.RhiDescriptorWrite;
 import com.github.slmpc.prismrhi.pipeline.RhiGraphicsPipeline;
 import com.github.slmpc.prismrhi.pipeline.RhiGraphicsPipelineCreateInfo;
+import com.github.slmpc.prismrhi.pipeline.RhiColorBlendAttachmentState;
 import com.github.slmpc.prismrhi.pipeline.RhiVertexAttribute;
 import com.github.slmpc.prismrhi.pipeline.RhiVertexInputBinding;
 import com.github.slmpc.prismrhi.pipeline.RhiVertexInputRate;
@@ -43,17 +45,17 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.lwjgl.opengl.GL11.GL_COLOR;
+import static org.lwjgl.opengl.GL11.GL_BLEND;
+import static org.lwjgl.opengl.GL11.GL_CULL_FACE;
 import static org.lwjgl.opengl.GL11.GL_DEPTH;
+import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
+import static org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK;
 import static org.lwjgl.opengl.GL11.GL_SCISSOR_TEST;
+import static org.lwjgl.opengl.GL11.GL_STENCIL_TEST;
 import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
 import static org.lwjgl.opengl.GL11.glDrawArrays;
 import static org.lwjgl.opengl.GL11.glDrawElements;
-import static org.lwjgl.opengl.GL11.glBindTexture;
-import static org.lwjgl.opengl.GL11.glEnable;
-import static org.lwjgl.opengl.GL11.glScissor;
-import static org.lwjgl.opengl.GL11.glViewport;
 import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
-import static org.lwjgl.opengl.GL13.glActiveTexture;
 import static org.lwjgl.opengl.GL14.glMultiDrawArrays;
 import static org.lwjgl.opengl.GL14.glMultiDrawElements;
 import static org.lwjgl.opengl.GL15.glBindBuffer;
@@ -64,22 +66,11 @@ import static org.lwjgl.opengl.GL31.glDrawElementsInstanced;
 import static org.lwjgl.opengl.GL30.GL_FRAMEBUFFER;
 import static org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_COMPLETE;
 import static org.lwjgl.opengl.GL30.GL_DEPTH_STENCIL;
-import static org.lwjgl.opengl.GL30.glBindBufferBase;
-import static org.lwjgl.opengl.GL30.glBindBufferRange;
-import static org.lwjgl.opengl.GL30.glBindFramebuffer;
 import static org.lwjgl.opengl.GL30.glCheckFramebufferStatus;
 import static org.lwjgl.opengl.GL30.glClearBufferfi;
 import static org.lwjgl.opengl.GL30.glClearBufferfv;
-import static org.lwjgl.opengl.GL30.glDeleteFramebuffers;
 import static org.lwjgl.opengl.GL30.glDrawBuffers;
-import static org.lwjgl.opengl.GL30.glFramebufferTexture2D;
-import static org.lwjgl.opengl.GL30.glGenFramebuffers;
 import static org.lwjgl.opengl.GL31.GL_UNIFORM_BUFFER;
-import static org.lwjgl.opengl.GL20.glEnableVertexAttribArray;
-import static org.lwjgl.opengl.GL20.glUseProgram;
-import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
-import static org.lwjgl.opengl.GL33.glBindSampler;
-import static org.lwjgl.opengl.GL33.glVertexAttribDivisor;
 import static org.lwjgl.opengl.GL40.GL_DRAW_INDIRECT_BUFFER;
 import static org.lwjgl.opengl.GL40.glDrawArraysIndirect;
 import static org.lwjgl.opengl.GL40.glDrawElementsIndirect;
@@ -97,6 +88,7 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
     private final long handle = NEXT_HANDLE.getAndIncrement();
     private final RhiCommandBufferLevel level;
     private final RhiQueueType queueType;
+    private final RhiGlStateBridge gl;
     private final List<Runnable> recordedCommands = new ArrayList<>();
     private RhiPrimitiveTopology primitiveTopology = RhiPrimitiveTopology.TRIANGLE_LIST;
     private RhiIndexType indexType = RhiIndexType.UINT32;
@@ -104,9 +96,10 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
     private int activeFramebuffer;
     private State state = State.INITIAL;
 
-    Gl41CommandBuffer(RhiCommandBufferLevel level, RhiQueueType queueType) {
+    Gl41CommandBuffer(RhiCommandBufferLevel level, RhiQueueType queueType, RhiGlStateBridge glStateBridge) {
         this.level = level == null ? RhiCommandBufferLevel.PRIMARY : level;
         this.queueType = queueType;
+        this.gl = glStateBridge == null ? Gl41RawStateBridge.INSTANCE : glStateBridge;
     }
 
     @Override
@@ -170,8 +163,8 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
             if (activeFramebuffer != 0) {
                 throw new RhiException("OpenGL 4.1 command buffer is already inside rendering");
             }
-            int framebuffer = glGenFramebuffers();
-            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+            int framebuffer = gl.genFramebuffer();
+            gl.bindFramebuffer(GL_FRAMEBUFFER, framebuffer);
             activeFramebuffer = framebuffer;
             attachRenderingTargets(renderingInfo);
             if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
@@ -186,8 +179,9 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
         ensureRecording();
         recordedCommands.add(() -> {
             if (activeFramebuffer != 0) {
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glDeleteFramebuffers(activeFramebuffer);
+                gl.disable(GL_SCISSOR_TEST);
+                gl.bindFramebuffer(GL_FRAMEBUFFER, 0);
+                gl.deleteFramebuffer(activeFramebuffer);
                 activeFramebuffer = 0;
             }
         });
@@ -200,7 +194,11 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
             throw new RhiException("OpenGL 4.1 bindGraphicsPipeline requires an OpenGL 4.1 pipeline");
         }
         currentPipelineInfo = glPipeline.createInfo();
-        recordedCommands.add(() -> glUseProgram((int) glPipeline.nativeHandle()));
+        RhiGraphicsPipelineCreateInfo pipelineInfo = currentPipelineInfo;
+        recordedCommands.add(() -> {
+            applyPipelineState(pipelineInfo);
+            gl.useProgram((int) glPipeline.nativeHandle());
+        });
     }
 
     @Override
@@ -220,7 +218,7 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
     @Override
     public void setViewport(RhiViewport viewport) {
         ensureRecording();
-        recordedCommands.add(() -> glViewport(
+        recordedCommands.add(() -> gl.viewport(
                 Math.round(viewport.x()),
                 Math.round(viewport.y()),
                 Math.round(viewport.width()),
@@ -232,8 +230,8 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
     public void setScissor(RhiRect2D scissor) {
         ensureRecording();
         recordedCommands.add(() -> {
-            glEnable(GL_SCISSOR_TEST);
-            glScissor(
+            gl.enable(GL_SCISSOR_TEST);
+            gl.scissor(
                     scissor.offset().x(),
                     scissor.offset().y(),
                     scissor.extent().width(),
@@ -260,7 +258,7 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
         ensureRecording();
         requireBackendBuffer(buffer, "OpenGL 4.1 bindIndexBuffer");
         this.indexType = indexType == null ? RhiIndexType.UINT32 : indexType;
-        recordedCommands.add(() -> glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (int) buffer.nativeHandle()));
+        recordedCommands.add(() -> gl.bindBuffer(GL_ELEMENT_ARRAY_BUFFER, (int) buffer.nativeHandle()));
     }
 
     @Override
@@ -360,9 +358,9 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
         RhiPrimitiveTopology topology = primitiveTopology;
         recordedCommands.add(() -> {
             requireBackendBuffer(command.buffer(), "OpenGL 4.1 drawIndirect");
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
             glDrawArraysIndirect(Gl41Support.primitiveTopology(topology), command.offset());
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
         });
     }
 
@@ -373,13 +371,13 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
         RhiIndexType capturedIndexType = indexType;
         recordedCommands.add(() -> {
             requireBackendBuffer(command.buffer(), "OpenGL 4.1 drawIndexedIndirect");
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
             glDrawElementsIndirect(
                     Gl41Support.primitiveTopology(topology),
                     Gl41Support.indexType(capturedIndexType),
                     command.offset()
             );
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
         });
     }
 
@@ -437,6 +435,53 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
         }
     }
 
+    private void applyPipelineState(RhiGraphicsPipelineCreateInfo pipelineInfo) {
+        var raster = pipelineInfo.rasterization();
+        gl.polygonMode(GL_FRONT_AND_BACK, Gl41Support.polygonMode(raster.polygonMode()));
+        gl.frontFace(Gl41Support.frontFace(raster.frontFace()));
+        gl.lineWidth(raster.lineWidth());
+
+        int cullMode = Gl41Support.cullMode(raster.cullMode());
+        if (cullMode == 0) {
+            gl.disable(GL_CULL_FACE);
+        } else {
+            gl.enable(GL_CULL_FACE);
+            gl.cullFace(cullMode);
+        }
+
+        var depthStencil = pipelineInfo.depthStencil();
+        if (depthStencil.depthTestEnable()) {
+            gl.enable(GL_DEPTH_TEST);
+            gl.depthFunc(Gl41Support.compareOp(depthStencil.depthCompareOp()));
+        } else {
+            gl.disable(GL_DEPTH_TEST);
+        }
+        gl.depthMask(depthStencil.depthWriteEnable());
+
+        if (depthStencil.stencilTestEnable()) {
+            gl.enable(GL_STENCIL_TEST);
+        } else {
+            gl.disable(GL_STENCIL_TEST);
+        }
+
+        if (pipelineInfo.colorBlendAttachments().stream().anyMatch(RhiColorBlendAttachmentState::blendEnable)) {
+            RhiColorBlendAttachmentState blend = pipelineInfo.colorBlendAttachments().get(0);
+            gl.enable(GL_BLEND);
+            gl.blendFuncSeparate(
+                    Gl41Support.blendFactor(blend.srcColorBlendFactor()),
+                    Gl41Support.blendFactor(blend.dstColorBlendFactor()),
+                    Gl41Support.blendFactor(blend.srcAlphaBlendFactor()),
+                    Gl41Support.blendFactor(blend.dstAlphaBlendFactor())
+            );
+            gl.blendEquationSeparate(
+                    Gl41Support.blendOp(blend.colorBlendOp()),
+                    Gl41Support.blendOp(blend.alphaBlendOp())
+            );
+        } else {
+            gl.disable(GL_BLEND);
+        }
+    }
+
     private void attachRenderingTargets(RhiRenderingInfo renderingInfo) {
         int colorCount = renderingInfo.colorAttachments().size();
         if (colorCount > 0) {
@@ -445,7 +490,7 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
                 RhiRenderingAttachment attachment = renderingInfo.colorAttachments().get(i);
                 requireImageView(attachment, "OpenGL 4.1 color attachment");
                 int attachmentPoint = Gl41Support.colorAttachment(i);
-                glFramebufferTexture2D(
+                gl.framebufferTexture2D(
                         GL_FRAMEBUFFER,
                         attachmentPoint,
                         GL_TEXTURE_2D,
@@ -459,7 +504,7 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
         if (renderingInfo.depthAttachment() != null) {
             RhiRenderingAttachment attachment = renderingInfo.depthAttachment();
             requireImageView(attachment, "OpenGL 4.1 depth attachment");
-            glFramebufferTexture2D(
+            gl.framebufferTexture2D(
                     GL_FRAMEBUFFER,
                     Gl41Support.depthStencilAttachment(attachment.view().format()),
                     GL_TEXTURE_2D,
@@ -494,7 +539,7 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
     ) {
         for (RhiVertexBufferBinding bufferBinding : vertexBufferBindings) {
             requireBackendBuffer(bufferBinding.buffer(), "OpenGL 4.1 bindVertexBuffers");
-            glBindBuffer(GL_ARRAY_BUFFER, (int) bufferBinding.buffer().nativeHandle());
+            gl.bindBuffer(GL_ARRAY_BUFFER, (int) bufferBinding.buffer().nativeHandle());
             RhiVertexInputBinding inputBinding = pipelineInfo.vertexInputBindings().stream()
                     .filter(binding -> binding.binding() == bufferBinding.binding())
                     .findFirst()
@@ -502,8 +547,8 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
             for (RhiVertexAttribute attribute : pipelineInfo.vertexAttributes()) {
                 if (attribute.binding() == bufferBinding.binding()) {
                     Gl41Support.VertexAttributeFormat format = Gl41Support.vertexAttributeFormat(attribute.format());
-                    glEnableVertexAttribArray(attribute.location());
-                    glVertexAttribPointer(
+                    gl.enableVertexAttribArray(attribute.location());
+                    gl.vertexAttribPointer(
                             attribute.location(),
                             format.components(),
                             format.type(),
@@ -511,7 +556,7 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
                             inputBinding.stride(),
                             bufferBinding.offset() + attribute.offset()
                     );
-                    glVertexAttribDivisor(attribute.location(), inputBinding.inputRate() == RhiVertexInputRate.INSTANCE ? 1 : 0);
+                    gl.vertexAttribDivisor(attribute.location(), inputBinding.inputRate() == RhiVertexInputRate.INSTANCE ? 1 : 0);
                 }
             }
         }
@@ -525,19 +570,19 @@ final class Gl41CommandBuffer implements RhiCommandBuffer {
             if (write.type() == RhiDescriptorType.UNIFORM_BUFFER || write.type() == RhiDescriptorType.UNIFORM_BUFFER_DYNAMIC) {
                 requireBackendBuffer(write.buffer(), "OpenGL 4.1 uniform buffer descriptor");
                 long range = write.range() == 0 ? write.buffer().size() : write.range();
-                glBindBufferRange(GL_UNIFORM_BUFFER, write.binding(), (int) write.buffer().nativeHandle(), write.offset(), range);
+                gl.bindBufferRange(GL_UNIFORM_BUFFER, write.binding(), (int) write.buffer().nativeHandle(), write.offset(), range);
             } else if (write.type() == RhiDescriptorType.SAMPLER) {
                 requireSampler(write);
-                glBindSampler(write.binding(), (int) write.sampler().nativeHandle());
+                gl.bindSampler(write.binding(), (int) write.sampler().nativeHandle());
             } else if (write.type() == RhiDescriptorType.SAMPLED_IMAGE
                     || write.type() == RhiDescriptorType.COMBINED_IMAGE_SAMPLER
                     || write.type() == RhiDescriptorType.INPUT_ATTACHMENT) {
                 requireImageDescriptor(write);
-                glActiveTexture(GL_TEXTURE0 + write.binding());
-                glBindTexture(GL_TEXTURE_2D, (int) write.imageView().nativeHandle());
+                gl.activeTexture(GL_TEXTURE0 + write.binding());
+                gl.bindTexture(GL_TEXTURE_2D, (int) write.imageView().nativeHandle());
                 if (write.sampler() != null) {
                     requireSampler(write);
-                    glBindSampler(write.binding(), (int) write.sampler().nativeHandle());
+                    gl.bindSampler(write.binding(), (int) write.sampler().nativeHandle());
                 }
             } else {
                 throw new RhiException("OpenGL 4.1 backend does not support " + write.type() + " descriptors");

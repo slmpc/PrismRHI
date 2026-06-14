@@ -2,6 +2,12 @@ package com.github.slmpc.prismrhi.backend.opengl41;
 
 import com.github.slmpc.prismrhi.RhiException;
 import com.github.slmpc.prismrhi.format.RhiFormat;
+import com.github.slmpc.prismrhi.pipeline.RhiBlendFactor;
+import com.github.slmpc.prismrhi.pipeline.RhiBlendOp;
+import com.github.slmpc.prismrhi.pipeline.RhiCompareOp;
+import com.github.slmpc.prismrhi.pipeline.RhiCullMode;
+import com.github.slmpc.prismrhi.pipeline.RhiFrontFace;
+import com.github.slmpc.prismrhi.pipeline.RhiPolygonMode;
 import com.github.slmpc.prismrhi.resource.RhiFilter;
 import com.github.slmpc.prismrhi.resource.RhiIndexType;
 import com.github.slmpc.prismrhi.resource.RhiMemoryUsage;
@@ -11,6 +17,8 @@ import com.github.slmpc.prismrhi.resource.RhiSamplerAddressMode;
 import com.github.slmpc.prismrhi.shader.RhiShaderCodeType;
 import com.github.slmpc.prismrhi.shader.RhiShaderStage;
 import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GLCapabilities;
 
 import static org.lwjgl.opengl.GL11.GL_DEPTH_COMPONENT;
@@ -181,12 +189,74 @@ final class Gl41Support {
         };
     }
 
+    static int blendFactor(RhiBlendFactor factor) {
+        return switch (factor == null ? RhiBlendFactor.ONE : factor) {
+            case ZERO -> GL11.GL_ZERO;
+            case ONE -> GL11.GL_ONE;
+            case SRC_COLOR -> GL11.GL_SRC_COLOR;
+            case ONE_MINUS_SRC_COLOR -> GL11.GL_ONE_MINUS_SRC_COLOR;
+            case DST_COLOR -> GL11.GL_DST_COLOR;
+            case ONE_MINUS_DST_COLOR -> GL11.GL_ONE_MINUS_DST_COLOR;
+            case SRC_ALPHA -> GL11.GL_SRC_ALPHA;
+            case ONE_MINUS_SRC_ALPHA -> GL11.GL_ONE_MINUS_SRC_ALPHA;
+            case DST_ALPHA -> GL11.GL_DST_ALPHA;
+            case ONE_MINUS_DST_ALPHA -> GL11.GL_ONE_MINUS_DST_ALPHA;
+        };
+    }
+
+    static int blendOp(RhiBlendOp op) {
+        return switch (op == null ? RhiBlendOp.ADD : op) {
+            case ADD -> GL14.GL_FUNC_ADD;
+            case SUBTRACT -> GL14.GL_FUNC_SUBTRACT;
+            case REVERSE_SUBTRACT -> GL14.GL_FUNC_REVERSE_SUBTRACT;
+            case MIN -> GL14.GL_MIN;
+            case MAX -> GL14.GL_MAX;
+        };
+    }
+
+    static int compareOp(RhiCompareOp op) {
+        return switch (op == null ? RhiCompareOp.LESS_OR_EQUAL : op) {
+            case NEVER -> GL11.GL_NEVER;
+            case LESS -> GL11.GL_LESS;
+            case EQUAL -> GL11.GL_EQUAL;
+            case LESS_OR_EQUAL -> GL11.GL_LEQUAL;
+            case GREATER -> GL11.GL_GREATER;
+            case NOT_EQUAL -> GL11.GL_NOTEQUAL;
+            case GREATER_OR_EQUAL -> GL11.GL_GEQUAL;
+            case ALWAYS -> GL11.GL_ALWAYS;
+        };
+    }
+
+    static int cullMode(RhiCullMode mode) {
+        return switch (mode == null ? RhiCullMode.BACK : mode) {
+            case NONE -> 0;
+            case FRONT -> GL11.GL_FRONT;
+            case BACK -> GL11.GL_BACK;
+            case FRONT_AND_BACK -> GL11.GL_FRONT_AND_BACK;
+        };
+    }
+
+    static int frontFace(RhiFrontFace frontFace) {
+        return frontFace == RhiFrontFace.CLOCKWISE ? GL11.GL_CW : GL11.GL_CCW;
+    }
+
+    static int polygonMode(RhiPolygonMode polygonMode) {
+        return switch (polygonMode == null ? RhiPolygonMode.FILL : polygonMode) {
+            case FILL -> GL11.GL_FILL;
+            case LINE -> GL11.GL_LINE;
+            case POINT -> GL11.GL_POINT;
+        };
+    }
+
     static VertexAttributeFormat vertexAttributeFormat(RhiFormat format) {
         return switch (format) {
             case R8_UNORM -> new VertexAttributeFormat(1, GL_UNSIGNED_BYTE, true);
             case RG8_UNORM -> new VertexAttributeFormat(2, GL_UNSIGNED_BYTE, true);
             case RGB8_UNORM -> new VertexAttributeFormat(3, GL_UNSIGNED_BYTE, true);
             case RGBA8_UNORM, BGRA8_UNORM -> new VertexAttributeFormat(4, GL_UNSIGNED_BYTE, true);
+            case R32_FLOAT -> new VertexAttributeFormat(1, GL_FLOAT, false);
+            case RG32_FLOAT -> new VertexAttributeFormat(2, GL_FLOAT, false);
+            case RGB32_FLOAT -> new VertexAttributeFormat(3, GL_FLOAT, false);
             case RGBA16_FLOAT -> new VertexAttributeFormat(4, GL_FLOAT, false);
             case RGBA32_FLOAT -> new VertexAttributeFormat(4, GL_FLOAT, false);
             case RGBA8_SRGB, BGRA8_SRGB, D24_UNORM_S8_UINT, D32_FLOAT, UNDEFINED ->
@@ -220,6 +290,8 @@ final class Gl41Support {
             case BGRA8_UNORM -> new TextureFormat(GL_RGBA8, GL_BGRA, GL_UNSIGNED_BYTE);
             case RGBA8_SRGB -> new TextureFormat(GL_SRGB8_ALPHA8, GL_RGBA, GL_UNSIGNED_BYTE);
             case BGRA8_SRGB -> new TextureFormat(GL_SRGB8_ALPHA8, GL_BGRA, GL_UNSIGNED_BYTE);
+            case R32_FLOAT, RG32_FLOAT, RGB32_FLOAT ->
+                    throw new RhiException(format + " is not a valid OpenGL texture format");
             case RGBA16_FLOAT -> new TextureFormat(GL_RGBA16F, GL_RGBA, GL_FLOAT);
             case RGBA32_FLOAT -> new TextureFormat(GL_RGBA32F, GL_RGBA, GL_FLOAT);
             case D24_UNORM_S8_UINT -> new TextureFormat(GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8);

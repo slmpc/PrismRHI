@@ -1,6 +1,7 @@
 package com.github.slmpc.prismrhi.backend.opengldsa;
 
 import com.github.slmpc.prismrhi.backend.BackendApi;
+import com.github.slmpc.prismrhi.backend.RhiGlStateBridge;
 import com.github.slmpc.prismrhi.command.RhiCommandBuffer;
 import com.github.slmpc.prismrhi.command.RhiCommandBufferLevel;
 import com.github.slmpc.prismrhi.command.RhiDrawCommand;
@@ -21,6 +22,7 @@ import com.github.slmpc.prismrhi.descriptor.RhiDescriptorType;
 import com.github.slmpc.prismrhi.descriptor.RhiDescriptorWrite;
 import com.github.slmpc.prismrhi.pipeline.RhiGraphicsPipeline;
 import com.github.slmpc.prismrhi.pipeline.RhiGraphicsPipelineCreateInfo;
+import com.github.slmpc.prismrhi.pipeline.RhiColorBlendAttachmentState;
 import com.github.slmpc.prismrhi.pipeline.RhiVertexAttribute;
 import com.github.slmpc.prismrhi.pipeline.RhiVertexInputBinding;
 import com.github.slmpc.prismrhi.pipeline.RhiVertexInputRate;
@@ -47,38 +49,28 @@ import static org.lwjgl.opengl.ARBIndirectParameters.GL_PARAMETER_BUFFER_ARB;
 import static org.lwjgl.opengl.ARBIndirectParameters.glMultiDrawArraysIndirectCountARB;
 import static org.lwjgl.opengl.ARBIndirectParameters.glMultiDrawElementsIndirectCountARB;
 import static org.lwjgl.opengl.GL11.GL_COLOR;
+import static org.lwjgl.opengl.GL11.GL_BLEND;
+import static org.lwjgl.opengl.GL11.GL_CULL_FACE;
 import static org.lwjgl.opengl.GL11.GL_DEPTH;
+import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
+import static org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK;
 import static org.lwjgl.opengl.GL11.GL_SCISSOR_TEST;
+import static org.lwjgl.opengl.GL11.GL_STENCIL_TEST;
 import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
-import static org.lwjgl.opengl.GL11.glBindTexture;
-import static org.lwjgl.opengl.GL11.glEnable;
-import static org.lwjgl.opengl.GL11.glScissor;
-import static org.lwjgl.opengl.GL11.glViewport;
 import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
-import static org.lwjgl.opengl.GL13.glActiveTexture;
 import static org.lwjgl.opengl.GL14.glMultiDrawArrays;
 import static org.lwjgl.opengl.GL14.glMultiDrawElements;
 import static org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL15.GL_ELEMENT_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL15.glBindBuffer;
-import static org.lwjgl.opengl.GL20.glEnableVertexAttribArray;
-import static org.lwjgl.opengl.GL20.glUseProgram;
-import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
 import static org.lwjgl.opengl.GL30.GL_DEPTH_STENCIL;
 import static org.lwjgl.opengl.GL30.GL_FRAMEBUFFER;
 import static org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_COMPLETE;
-import static org.lwjgl.opengl.GL30.glBindBufferRange;
-import static org.lwjgl.opengl.GL30.glBindFramebuffer;
 import static org.lwjgl.opengl.GL30.glCheckFramebufferStatus;
 import static org.lwjgl.opengl.GL30.glClearBufferfi;
 import static org.lwjgl.opengl.GL30.glClearBufferfv;
-import static org.lwjgl.opengl.GL30.glDeleteFramebuffers;
 import static org.lwjgl.opengl.GL30.glDrawBuffers;
-import static org.lwjgl.opengl.GL30.glFramebufferTexture2D;
-import static org.lwjgl.opengl.GL30.glGenFramebuffers;
 import static org.lwjgl.opengl.GL31.GL_UNIFORM_BUFFER;
-import static org.lwjgl.opengl.GL33.glBindSampler;
-import static org.lwjgl.opengl.GL33.glVertexAttribDivisor;
 import static org.lwjgl.opengl.GL40.GL_DRAW_INDIRECT_BUFFER;
 import static org.lwjgl.opengl.GL42.glDrawArraysInstancedBaseInstance;
 import static org.lwjgl.opengl.GL42.glDrawElementsInstancedBaseVertexBaseInstance;
@@ -102,6 +94,7 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
     private final long handle = NEXT_HANDLE.getAndIncrement();
     private final RhiCommandBufferLevel level;
     private final RhiQueueType queueType;
+    private final RhiGlStateBridge gl;
     private final List<Runnable> recordedCommands = new ArrayList<>();
     private RhiPrimitiveTopology primitiveTopology = RhiPrimitiveTopology.TRIANGLE_LIST;
     private RhiIndexType indexType = RhiIndexType.UINT32;
@@ -109,9 +102,10 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
     private int activeFramebuffer;
     private State state = State.INITIAL;
 
-    GlDsaCommandBuffer(RhiCommandBufferLevel level, RhiQueueType queueType) {
+    GlDsaCommandBuffer(RhiCommandBufferLevel level, RhiQueueType queueType, RhiGlStateBridge glStateBridge) {
         this.level = level == null ? RhiCommandBufferLevel.PRIMARY : level;
         this.queueType = queueType;
+        this.gl = glStateBridge == null ? GlDsaRawStateBridge.INSTANCE : glStateBridge;
     }
 
     @Override
@@ -175,8 +169,8 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
             if (activeFramebuffer != 0) {
                 throw new RhiException("OpenGL DSA command buffer is already inside rendering");
             }
-            int framebuffer = glGenFramebuffers();
-            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+            int framebuffer = gl.genFramebuffer();
+            gl.bindFramebuffer(GL_FRAMEBUFFER, framebuffer);
             activeFramebuffer = framebuffer;
             attachRenderingTargets(renderingInfo);
             if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
@@ -191,8 +185,9 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
         ensureRecording();
         recordedCommands.add(() -> {
             if (activeFramebuffer != 0) {
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glDeleteFramebuffers(activeFramebuffer);
+                gl.disable(GL_SCISSOR_TEST);
+                gl.bindFramebuffer(GL_FRAMEBUFFER, 0);
+                gl.deleteFramebuffer(activeFramebuffer);
                 activeFramebuffer = 0;
             }
         });
@@ -205,7 +200,11 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
             throw new RhiException("OpenGL DSA bindGraphicsPipeline requires an OpenGL DSA pipeline");
         }
         currentPipelineInfo = glPipeline.createInfo();
-        recordedCommands.add(() -> glUseProgram((int) glPipeline.nativeHandle()));
+        RhiGraphicsPipelineCreateInfo pipelineInfo = currentPipelineInfo;
+        recordedCommands.add(() -> {
+            applyPipelineState(pipelineInfo);
+            gl.useProgram((int) glPipeline.nativeHandle());
+        });
     }
 
     @Override
@@ -225,7 +224,7 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
     @Override
     public void setViewport(RhiViewport viewport) {
         ensureRecording();
-        recordedCommands.add(() -> glViewport(
+        recordedCommands.add(() -> gl.viewport(
                 Math.round(viewport.x()),
                 Math.round(viewport.y()),
                 Math.round(viewport.width()),
@@ -237,8 +236,8 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
     public void setScissor(RhiRect2D scissor) {
         ensureRecording();
         recordedCommands.add(() -> {
-            glEnable(GL_SCISSOR_TEST);
-            glScissor(
+            gl.enable(GL_SCISSOR_TEST);
+            gl.scissor(
                     scissor.offset().x(),
                     scissor.offset().y(),
                     scissor.extent().width(),
@@ -265,7 +264,7 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
         ensureRecording();
         requireBackendBuffer(buffer, "OpenGL DSA bindIndexBuffer");
         this.indexType = indexType == null ? RhiIndexType.UINT32 : indexType;
-        recordedCommands.add(() -> glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (int) buffer.nativeHandle()));
+        recordedCommands.add(() -> gl.bindBuffer(GL_ELEMENT_ARRAY_BUFFER, (int) buffer.nativeHandle()));
     }
 
     @Override
@@ -373,14 +372,14 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
         RhiPrimitiveTopology topology = primitiveTopology;
         recordedCommands.add(() -> {
             requireBackendBuffer(command.buffer(), "OpenGL DSA multiDrawIndirect");
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
             glMultiDrawArraysIndirect(
                     GlDsaSupport.primitiveTopology(topology),
                     command.offset(),
                     command.drawCount(),
                     command.stride()
             );
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
         });
     }
 
@@ -391,7 +390,7 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
         RhiIndexType capturedIndexType = indexType;
         recordedCommands.add(() -> {
             requireBackendBuffer(command.buffer(), "OpenGL DSA multiDrawIndexedIndirect");
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
             glMultiDrawElementsIndirect(
                     GlDsaSupport.primitiveTopology(topology),
                     GlDsaSupport.indexType(capturedIndexType),
@@ -399,7 +398,7 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
                     command.drawCount(),
                     command.stride()
             );
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
         });
     }
 
@@ -411,9 +410,9 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
             requireIndirectCountSupport();
             requireBackendBuffer(command.buffer(), "OpenGL DSA multiDrawIndirectCount");
             requireBackendBuffer(command.countBuffer(), "OpenGL DSA multiDrawIndirectCount");
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
             if (GL.getCapabilities().OpenGL46) {
-                glBindBuffer(GL_PARAMETER_BUFFER, (int) command.countBuffer().nativeHandle());
+                gl.bindBuffer(GL_PARAMETER_BUFFER, (int) command.countBuffer().nativeHandle());
                 glMultiDrawArraysIndirectCount(
                         GlDsaSupport.primitiveTopology(topology),
                         command.offset(),
@@ -421,9 +420,9 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
                         command.maxDrawCount(),
                         command.stride()
                 );
-                glBindBuffer(GL_PARAMETER_BUFFER, 0);
+                gl.bindBuffer(GL_PARAMETER_BUFFER, 0);
             } else {
-                glBindBuffer(GL_PARAMETER_BUFFER_ARB, (int) command.countBuffer().nativeHandle());
+                gl.bindBuffer(GL_PARAMETER_BUFFER_ARB, (int) command.countBuffer().nativeHandle());
                 glMultiDrawArraysIndirectCountARB(
                         GlDsaSupport.primitiveTopology(topology),
                         command.offset(),
@@ -431,9 +430,9 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
                         command.maxDrawCount(),
                         command.stride()
                 );
-                glBindBuffer(GL_PARAMETER_BUFFER_ARB, 0);
+                gl.bindBuffer(GL_PARAMETER_BUFFER_ARB, 0);
             }
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
         });
     }
 
@@ -446,9 +445,9 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
             requireIndirectCountSupport();
             requireBackendBuffer(command.buffer(), "OpenGL DSA multiDrawIndexedIndirectCount");
             requireBackendBuffer(command.countBuffer(), "OpenGL DSA multiDrawIndexedIndirectCount");
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, (int) command.buffer().nativeHandle());
             if (GL.getCapabilities().OpenGL46) {
-                glBindBuffer(GL_PARAMETER_BUFFER, (int) command.countBuffer().nativeHandle());
+                gl.bindBuffer(GL_PARAMETER_BUFFER, (int) command.countBuffer().nativeHandle());
                 glMultiDrawElementsIndirectCount(
                         GlDsaSupport.primitiveTopology(topology),
                         GlDsaSupport.indexType(capturedIndexType),
@@ -457,9 +456,9 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
                         command.maxDrawCount(),
                         command.stride()
                 );
-                glBindBuffer(GL_PARAMETER_BUFFER, 0);
+                gl.bindBuffer(GL_PARAMETER_BUFFER, 0);
             } else {
-                glBindBuffer(GL_PARAMETER_BUFFER_ARB, (int) command.countBuffer().nativeHandle());
+                gl.bindBuffer(GL_PARAMETER_BUFFER_ARB, (int) command.countBuffer().nativeHandle());
                 glMultiDrawElementsIndirectCountARB(
                         GlDsaSupport.primitiveTopology(topology),
                         GlDsaSupport.indexType(capturedIndexType),
@@ -468,9 +467,9 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
                         command.maxDrawCount(),
                         command.stride()
                 );
-                glBindBuffer(GL_PARAMETER_BUFFER_ARB, 0);
+                gl.bindBuffer(GL_PARAMETER_BUFFER_ARB, 0);
             }
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+            gl.bindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
         });
     }
 
@@ -502,6 +501,53 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
         }
     }
 
+    private void applyPipelineState(RhiGraphicsPipelineCreateInfo pipelineInfo) {
+        var raster = pipelineInfo.rasterization();
+        gl.polygonMode(GL_FRONT_AND_BACK, GlDsaSupport.polygonMode(raster.polygonMode()));
+        gl.frontFace(GlDsaSupport.frontFace(raster.frontFace()));
+        gl.lineWidth(raster.lineWidth());
+
+        int cullMode = GlDsaSupport.cullMode(raster.cullMode());
+        if (cullMode == 0) {
+            gl.disable(GL_CULL_FACE);
+        } else {
+            gl.enable(GL_CULL_FACE);
+            gl.cullFace(cullMode);
+        }
+
+        var depthStencil = pipelineInfo.depthStencil();
+        if (depthStencil.depthTestEnable()) {
+            gl.enable(GL_DEPTH_TEST);
+            gl.depthFunc(GlDsaSupport.compareOp(depthStencil.depthCompareOp()));
+        } else {
+            gl.disable(GL_DEPTH_TEST);
+        }
+        gl.depthMask(depthStencil.depthWriteEnable());
+
+        if (depthStencil.stencilTestEnable()) {
+            gl.enable(GL_STENCIL_TEST);
+        } else {
+            gl.disable(GL_STENCIL_TEST);
+        }
+
+        if (pipelineInfo.colorBlendAttachments().stream().anyMatch(RhiColorBlendAttachmentState::blendEnable)) {
+            RhiColorBlendAttachmentState blend = pipelineInfo.colorBlendAttachments().get(0);
+            gl.enable(GL_BLEND);
+            gl.blendFuncSeparate(
+                    GlDsaSupport.blendFactor(blend.srcColorBlendFactor()),
+                    GlDsaSupport.blendFactor(blend.dstColorBlendFactor()),
+                    GlDsaSupport.blendFactor(blend.srcAlphaBlendFactor()),
+                    GlDsaSupport.blendFactor(blend.dstAlphaBlendFactor())
+            );
+            gl.blendEquationSeparate(
+                    GlDsaSupport.blendOp(blend.colorBlendOp()),
+                    GlDsaSupport.blendOp(blend.alphaBlendOp())
+            );
+        } else {
+            gl.disable(GL_BLEND);
+        }
+    }
+
     private void attachRenderingTargets(RhiRenderingInfo renderingInfo) {
         int colorCount = renderingInfo.colorAttachments().size();
         if (colorCount > 0) {
@@ -510,7 +556,7 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
                 RhiRenderingAttachment attachment = renderingInfo.colorAttachments().get(i);
                 requireImageView(attachment, "OpenGL DSA color attachment");
                 int attachmentPoint = GlDsaSupport.colorAttachment(i);
-                glFramebufferTexture2D(
+                gl.framebufferTexture2D(
                         GL_FRAMEBUFFER,
                         attachmentPoint,
                         GL_TEXTURE_2D,
@@ -524,7 +570,7 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
         if (renderingInfo.depthAttachment() != null) {
             RhiRenderingAttachment attachment = renderingInfo.depthAttachment();
             requireImageView(attachment, "OpenGL DSA depth attachment");
-            glFramebufferTexture2D(
+            gl.framebufferTexture2D(
                     GL_FRAMEBUFFER,
                     GlDsaSupport.depthStencilAttachment(attachment.view().format()),
                     GL_TEXTURE_2D,
@@ -559,7 +605,7 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
     ) {
         for (RhiVertexBufferBinding bufferBinding : vertexBufferBindings) {
             requireBackendBuffer(bufferBinding.buffer(), "OpenGL DSA bindVertexBuffers");
-            glBindBuffer(GL_ARRAY_BUFFER, (int) bufferBinding.buffer().nativeHandle());
+            gl.bindBuffer(GL_ARRAY_BUFFER, (int) bufferBinding.buffer().nativeHandle());
             RhiVertexInputBinding inputBinding = pipelineInfo.vertexInputBindings().stream()
                     .filter(binding -> binding.binding() == bufferBinding.binding())
                     .findFirst()
@@ -567,8 +613,8 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
             for (RhiVertexAttribute attribute : pipelineInfo.vertexAttributes()) {
                 if (attribute.binding() == bufferBinding.binding()) {
                     GlDsaSupport.VertexAttributeFormat format = GlDsaSupport.vertexAttributeFormat(attribute.format());
-                    glEnableVertexAttribArray(attribute.location());
-                    glVertexAttribPointer(
+                    gl.enableVertexAttribArray(attribute.location());
+                    gl.vertexAttribPointer(
                             attribute.location(),
                             format.components(),
                             format.type(),
@@ -576,7 +622,7 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
                             inputBinding.stride(),
                             bufferBinding.offset() + attribute.offset()
                     );
-                    glVertexAttribDivisor(attribute.location(), inputBinding.inputRate() == RhiVertexInputRate.INSTANCE ? 1 : 0);
+                    gl.vertexAttribDivisor(attribute.location(), inputBinding.inputRate() == RhiVertexInputRate.INSTANCE ? 1 : 0);
                 }
             }
         }
@@ -590,23 +636,23 @@ final class GlDsaCommandBuffer implements RhiCommandBuffer {
             if (write.type() == RhiDescriptorType.UNIFORM_BUFFER || write.type() == RhiDescriptorType.UNIFORM_BUFFER_DYNAMIC) {
                 requireBackendBuffer(write.buffer(), "OpenGL DSA uniform buffer descriptor");
                 long range = write.range() == 0 ? write.buffer().size() : write.range();
-                glBindBufferRange(GL_UNIFORM_BUFFER, write.binding(), (int) write.buffer().nativeHandle(), write.offset(), range);
+                gl.bindBufferRange(GL_UNIFORM_BUFFER, write.binding(), (int) write.buffer().nativeHandle(), write.offset(), range);
             } else if (write.type() == RhiDescriptorType.STORAGE_BUFFER || write.type() == RhiDescriptorType.STORAGE_BUFFER_DYNAMIC) {
                 requireBackendBuffer(write.buffer(), "OpenGL DSA storage buffer descriptor");
                 long range = write.range() == 0 ? write.buffer().size() : write.range();
-                glBindBufferRange(GL_SHADER_STORAGE_BUFFER, write.binding(), (int) write.buffer().nativeHandle(), write.offset(), range);
+                gl.bindBufferRange(GL_SHADER_STORAGE_BUFFER, write.binding(), (int) write.buffer().nativeHandle(), write.offset(), range);
             } else if (write.type() == RhiDescriptorType.SAMPLER) {
                 requireSampler(write);
-                glBindSampler(write.binding(), (int) write.sampler().nativeHandle());
+                gl.bindSampler(write.binding(), (int) write.sampler().nativeHandle());
             } else if (write.type() == RhiDescriptorType.SAMPLED_IMAGE
                     || write.type() == RhiDescriptorType.COMBINED_IMAGE_SAMPLER
                     || write.type() == RhiDescriptorType.INPUT_ATTACHMENT) {
                 requireImageDescriptor(write);
-                glActiveTexture(GL_TEXTURE0 + write.binding());
-                glBindTexture(GL_TEXTURE_2D, (int) write.imageView().nativeHandle());
+                gl.activeTexture(GL_TEXTURE0 + write.binding());
+                gl.bindTexture(GL_TEXTURE_2D, (int) write.imageView().nativeHandle());
                 if (write.sampler() != null) {
                     requireSampler(write);
-                    glBindSampler(write.binding(), (int) write.sampler().nativeHandle());
+                    gl.bindSampler(write.binding(), (int) write.sampler().nativeHandle());
                 }
             } else {
                 throw new RhiException("OpenGL DSA backend does not support " + write.type() + " descriptors");
